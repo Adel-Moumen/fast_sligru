@@ -12,6 +12,7 @@ For questions or feedback about `fast_ligru`, please open an issue on GitHub or 
 ```python
 import torch
 from src.ligru import LiGRU
+from src.stabilised_ligru import SLiGRU
 
 batch, time, feats = 10, 10, 10
 hidden_size, num_layer, dropout = 512, 4, 0.1
@@ -20,7 +21,7 @@ nonlinearity = "relu" # works also with sine, leakyrelu and tanh
 device = "cuda" # it works with CPU too
 
 inp_tensor = torch.rand((batch, time, feats), requires_grad=False).to(device)
-net = LiGRU(
+net = SLiGRU( # or LiGRU
     input_shape=inp_tensor.shape,
     hidden_size=hidden_size,
     num_layers=num_layer,
