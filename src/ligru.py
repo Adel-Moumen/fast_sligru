@@ -7,7 +7,13 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from typing import Optional
-import fast_ligru as LIB
+
+try:
+    import fast_ligru
+except ImportError:
+    raise ImportError(
+        "Could not import fast_ligru. Please make sure that fast_ligru is installed correctly."
+    )
 
 
 class ApplyLiGRUCell(torch.autograd.Function):
@@ -28,7 +34,7 @@ class ApplyLiGRUCell(torch.autograd.Function):
         Returns:
             output : output of the ligru cell
         """
-        output, cache, = LIB.ligru_1_0_forward(
+        output, cache, = fast_ligru.ligru_1_0_forward(
             training, wx.contiguous(), h.contiguous(), u.T.contiguous(), activation
         )
 
@@ -46,7 +52,7 @@ class ApplyLiGRUCell(torch.autograd.Function):
 
         activation = ctx.activation
 
-        du, dwx, dh, = LIB.ligru_1_0_backward(
+        du, dwx, dh, = fast_ligru.ligru_1_0_backward(
             wx.contiguous(), u.contiguous(), h, cache, grad_out.contiguous(), activation
         )
 
