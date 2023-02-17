@@ -4,7 +4,7 @@ We provide two differents implementation: `Li-GRU` and `SLi-GRU` (resp. in the c
 
 The `Li-GRU` supports fp64, fp32 and fp16, and the `SLi-GRU` supports fp64 and fp32. Both of them can works with Torch AMP. 
 
-The implementations have been theoretically and empirically checked. We used `torch.autograd.gradcheck` and we scaled the `Li-GRUs` on real dataset such as CommonVoice Italian, French, LibriSpeech 960h and TIMIT, where we got expected results. All the `Li-GRUs` on these datasets have been trained thanks to `SpeechBrain` an all-in-one AI conversational toolkit.
+The implementations were verified theoretically and empirically. We used `torch.autograd.gradcheck` and we scaled the `Li-GRUs` on real dataset such as CommonVoice Italian, French, LibriSpeech 960h and TIMIT, where we got expected results. All the `Li-GRUs` on these datasets have been trained thanks to `SpeechBrain` an all-in-one AI conversational toolkit.
 
 For questions or feedback about `fast_ligru`, please open an issue on GitHub or send me an email at [adel.moumen@univ-avignon.fr](mailto:adel.moumen@univ-avignon.fr).
 
