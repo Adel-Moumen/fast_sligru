@@ -47,16 +47,3 @@ Will be updated soon!
 ## License
 [Apache 2.0](LICENSE)
 
-## Results
-
-### FP64
-
-![Forward of differents Li-GRUs implementation and an LSTM CuDNN](docs/img/fp64_fwd.png)
-![Backward of differents Li-GRUs implementation and an LSTM CuDNN](docs/img/fp64_bwd.png)
-![Forward + Backward of differents Li-GRUs implementation and an LSTM CuDNN](docs/img/fp64_fwd_bwd.png)
-
-### FP32
-![Forward of differents Li-GRUs implementation and an LSTM CuDNN](docs/img/fp32_fwd.png)
-![Backward of differents Li-GRUs implementation and an LSTM CuDNN](docs/img/fp32_bwd.png)
-![Forward + Backward of differents Li-GRUs implementation and an LSTM CuDNN](docs/img/fp32_fwd_bwd.png)
-
