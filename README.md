@@ -1,3 +1,3 @@
-# stabilised light gated recurrent units for speech recognition
+# Stabilised Light Gated Recurrent Units for Speech Recognition
 
 Will be updated soon! 🤖
