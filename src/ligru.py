@@ -389,27 +389,3 @@ def rnn_init(module):
     for name, param in module.named_parameters():
         if "weight_hh" in name or ".u.weight" in name:
             nn.init.orthogonal_(param)
-
-
-if __name__ == "__main__":
-    torch.manual_seed(42)
-    print("LIGRU 1.0 HASTE")
-    import time
-
-    inp_tensor = torch.rand([1, 5, 2], requires_grad=False).to("cuda")
-    net = LiGRU(
-        input_shape=inp_tensor.shape,
-        hidden_size=2,
-        num_layers=2,
-        dropout=0.50,
-        nonlinearity="tanh",
-    ).to("cuda")
-
-    torch.cuda.synchronize()
-    time1 = time.time()
-    out_tensor, _ = net(inp_tensor)
-    out_tensor.sum().backward()
-    torch.cuda.synchronize()
-    print(time.time() - time1)
-    print(out_tensor)
-    print(net.rnn[0].u.weight.grad)
