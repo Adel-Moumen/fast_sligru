@@ -14,19 +14,18 @@
 # ==============================================================================
 
 import os
-import sys
 
 from glob import glob
 from platform import platform
 from torch.utils import cpp_extension
 from setuptools import setup
-from setuptools.dist import Distribution
 
 
 class BuildHaste(cpp_extension.BuildExtension):
   def run(self):
     os.system('make haste')
     super().run()
+
 
 
 base_path = os.path.dirname(os.path.realpath(__file__))

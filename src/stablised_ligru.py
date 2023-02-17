@@ -1,15 +1,26 @@
-""" LiGRU 1.0 using the fastest implementation.
+""" Stabilised Light Gated Recurrent Unit (SLi-GRU) implementation.
+
+Author: Adel Moumen 2023
 """
 
 import torch
 import torch.nn as nn
 from torch import Tensor
 from typing import Optional
-import fast_ligru as LIB
+
+try:
+    import fast_ligru
+except ImportError:
+    raise ImportError(
+        "Could not import fast_ligru. Please make sure that fast_ligru is installed correctly."
+    )
 
 
 class ApplyLiGRUCell(torch.autograd.Function):
-    """ This function implements a Light GRU (liGRU)."""
+    """ This function implements a SLight GRU (liGRU).
+    
+    The layer normalisation will be applied to the recurrent weights.
+    """
 
     @staticmethod
     def forward(ctx, training, wx, u, h, activation):
@@ -26,13 +37,14 @@ class ApplyLiGRUCell(torch.autograd.Function):
         Returns:
             output : output of the ligru cell
         """
-        output, cache, = LIB.ligru_1_0_forward(
-            training, wx.contiguous(), h.contiguous(), u.T.contiguous(), activation
+
+        output, cache, act_uh, act_uh_norm_cache, = fast_ligru.ligru_2_0_forward(
+            training, wx.contiguous(), h.contiguous(), u.T.contiguous(), activation,
         )
 
-        ctx.save_for_backward(output, cache, wx, u, cache)
-
         ctx.activation = activation
+
+        ctx.save_for_backward(output, cache, act_uh, act_uh_norm_cache, wx, u, cache)
 
         return output
 
@@ -40,29 +52,30 @@ class ApplyLiGRUCell(torch.autograd.Function):
     def backward(ctx, grad_out):
         """Backward pass of the ligru cell. """
 
-        h, cache, wx, u, cache, = ctx.saved_tensors
+        h, cache, act_uh, act_uh_norm_cache, wx, u, cache, = ctx.saved_tensors
 
-        activation = ctx.activation
-
-        du, dwx, dh, = LIB.ligru_1_0_backward(
-            wx.contiguous(), u.contiguous(), h, cache, grad_out.contiguous(), activation
+        du, dwx, tmp_dwx, = fast_ligru.ligru_2_0_backward(
+            wx.contiguous(),
+            u.contiguous(),
+            h,
+            cache,
+            act_uh,
+            act_uh_norm_cache,
+            grad_out.contiguous(),
+            ctx.activation,
         )
 
-        return None, dwx, du.T, None, None, None, None
+        return None, dwx, du.T, None, None, None
 
 
-class LiGRU(torch.nn.Module):
-    """ This function implements a Light GRU (liGRU).
-    LiGRU is single-gate GRU model based on batch-norm + relu
-    activations + recurrent dropout. For more info see:
+class SLiGRU(torch.nn.Module):
+    """ This function implements a Stabilised Light GRU (SLiGRU).
+    SLiGRU is single-gate GRU model based on batch-norm + layer-norm + relu
+    activations + layer dropout. For more info see:
     "M. Ravanelli, P. Brakel, M. Omologo, Y. Bengio,
     Light Gated Recurrent Units for Speech Recognition,
     in IEEE Transactions on Emerging Topics in Computational Intelligence,
     2018" (https://arxiv.org/abs/1803.10225)
-    This is a custm RNN and to speed it up it must be compiled with
-    the torch just-in-time compiler (jit) right before using it.
-    You can compile it with:
-    compiled_model = torch.jit.script(model)
     It accepts in input tensors formatted as (batch, time, fea).
     In the case of 4d inputs like (batch, time, fea, channel) the tensor is
     flattened as (batch, time, fea*channel).
@@ -94,7 +107,7 @@ class LiGRU(torch.nn.Module):
     Example
     -------
     >>> inp_tensor = torch.rand([4, 10, 20])
-    >>> net = LiGRU(input_shape=inp_tensor.shape, hidden_size=5)
+    >>> net = SLiGRU(input_shape=inp_tensor.shape, hidden_size=5)
     >>> out_tensor, _ = net(inp_tensor)
     >>>
     torch.Size([4, 10, 5])
@@ -259,6 +272,8 @@ class LiGRU_Layer(torch.nn.Module):
 
         self.u = nn.Linear(self.hidden_size, 2 * self.hidden_size, bias=False)
 
+        self.recurrent_norm = nn.LayerNorm(2 * hidden_size, elementwise_affine=False)
+
         if self.bidirectional:
             self.batch_size = self.batch_size * 2
 
@@ -339,7 +354,7 @@ class LiGRU_Layer(torch.nn.Module):
 
         # Loop over time axis
         for k in range(w.shape[1]):
-            gates = w[:, k] + self.u(ht)
+            gates = w[:, k] + self.recurrent_norm(self.u(ht))
             at, zt = gates.chunk(2, 1)
             zt = torch.sigmoid(zt)
             hcand = self.act(at)
@@ -391,11 +406,11 @@ def rnn_init(module):
 
 if __name__ == "__main__":
     torch.manual_seed(42)
-    print("LIGRU 1.0 HASTE")
+    print("LIGRU LN HASTE")
     import time
 
     inp_tensor = torch.rand([1, 5, 2], requires_grad=False).to("cuda")
-    net = LiGRU(
+    net = SLiGRU(
         input_shape=inp_tensor.shape,
         hidden_size=2,
         num_layers=2,

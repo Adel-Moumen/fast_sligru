@@ -2,7 +2,7 @@
 
 
 VERSION = '0'
-DESCRIPTION = 'fast_ligru: fast implementatin of the Li-GRU.'
+DESCRIPTION = 'fast_ligru: fast implementatin of the SLi-GRU and Li-GRU.'
 AUTHOR = 'Adel Moumen'
 AUTHOR_EMAIL = 'adel.moumen@alumni.univ-avignon.fr'
 URL = 'https://adel-moumen.github.io/'
