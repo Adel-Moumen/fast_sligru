@@ -8,6 +8,34 @@ The implementations were verified theoretically and empirically. We used `torch.
 
 For questions or feedback about `fast_ligru`, please open an issue on GitHub or send me an email at [adel.moumen@univ-avignon.fr](mailto:adel.moumen@univ-avignon.fr).
 
+## How to use it 
+```python
+import torch
+from src.ligru import LiGRU
+
+batch, time, feats = 10, 10, 10
+hidden_size, num_layer, dropout = 512, 4, 0.1
+nonlinearity = "relu" # works also with sine, leakyrelu and tanh
+
+device = "cuda" # it works with CPU too
+
+inp_tensor = torch.rand((batch, time, feats), requires_grad=False).to(device)
+net = LiGRU(
+    input_shape=inp_tensor.shape,
+    hidden_size=hidden_size,
+    num_layers=num_layer,
+    dropout=dropout,
+    nonlinearity=nonlinearity,
+).to(device)
+
+# forward
+out_tensor, _ = net(inp_tensor)
+
+# backward
+out_tensor.sum().backward()
+```
+
+
 ## Install
 Here's what you'll need to get started:
 - a [CUDA Compute Capability](https://developer.nvidia.com/cuda-gpus) 3.7+ GPU (required)
