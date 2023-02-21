@@ -1,4 +1,4 @@
-`fast_ligru` is an open-source CUDA implementation that is the fastest public version of the [Light Gated Recurrent Units](https://arxiv.org/abs/1803.10225) and the [Stabilised Light Gated Recurrent Units]() (5 times faster than a raw PyTorch implementation boosted with JiT). 
+`fast_ligru` is an open-source CUDA implementation that is the fastest public version of the [Light Gated Recurrent Units](https://arxiv.org/abs/1803.10225) and the [Stabilised Light Gated Recurrent Units](https://arxiv.org/abs/2302.10144) (5 times faster than a raw PyTorch implementation boosted with JiT). 
 
 We provide two differents implementation: `Li-GRU` and `SLi-GRU`. The difference rely on the recurrent connection, in the `SLi-GRU` we apply a layer normalisation on the recurrent weights to tackle down the gradient exploding problem. Indeed, the `Li-GRU` is unstable and in practice cannot be trained on medium to large scale dataset (e.g, LibriSpeech 960h, CommonVoice) while the `SLi-GRU` can and was designed for this purpose. 
 
