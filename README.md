@@ -70,7 +70,23 @@ The project rely on the [Haste](https://github.com/lmnt-com/haste) structure, bu
 ## Citing this work
 To cite this work, please use the following BibTeX entry:
 ```
-Will be updated soon!
+@misc{https://doi.org/10.48550/arxiv.2302.10144,
+  doi = {10.48550/ARXIV.2302.10144},
+  
+  url = {https://arxiv.org/abs/2302.10144},
+  
+  author = {Moumen, Adel and Parcollet, Titouan},
+  
+  keywords = {Audio and Speech Processing (eess.AS), Computation and Language (cs.CL), Machine Learning (cs.LG), Sound (cs.SD), FOS: Electrical engineering, electronic engineering, information engineering, FOS: Electrical engineering, electronic engineering, information engineering, FOS: Computer and information sciences, FOS: Computer and information sciences},
+  
+  title = {Stabilising and accelerating light gated recurrent units for automatic speech recognition},
+  
+  publisher = {arXiv},
+  
+  year = {2023},
+  
+  copyright = {Creative Commons Attribution 4.0 International}
+}
 ```
 
 ## License
