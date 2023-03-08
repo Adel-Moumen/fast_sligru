@@ -20,7 +20,7 @@ nonlinearity = "relu" # works also with sine, leakyrelu and tanh
 
 device = "cuda" # it works with CPU too
 
-inp_tensor = torch.rand((batch, time, feats), requires_grad=False).to(device)
+inp_tensor = torch.randn((batch, time, feats), requires_grad=False).to(device)
 net = SLiGRU( # or LiGRU
     input_shape=inp_tensor.shape,
     hidden_size=hidden_size,
