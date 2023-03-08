@@ -53,6 +53,7 @@ make fast_ligru
 install it with `pip`:
 ```
 pip install fast_ligru-*.whl
+pip install -e .
 ```
 
 If the CUDA Toolkit that you're building against is not in `/usr/local/cuda`, you must specify the
