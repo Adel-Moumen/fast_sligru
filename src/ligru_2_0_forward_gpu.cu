@@ -86,7 +86,7 @@ __global__ void PointwiseOperationsLeakyReLU(const int batch_dim,
   const T z =
       sigmoid(wx[z_idx] + uh[z_idx]); 
                                    
-  const T a = wx[a_idx] + uh[a_idx];  
+  const T a = wx[a_idx] + uh[a_idx];
 
   const T hcand = leaky_relu(a); 
 
@@ -306,6 +306,7 @@ void ForwardPass<T>::Run(const int seq_length, T *wx, const T *u, T *h, T *v,
   cublasSetStream(blas_handle, save_stream);
 }
 
+template struct ForwardPass<half>;
 template struct ForwardPass<float>;
 template struct ForwardPass<double>;
 

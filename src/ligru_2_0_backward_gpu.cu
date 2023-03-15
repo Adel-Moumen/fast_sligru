@@ -295,6 +295,7 @@ void BackwardPass<T>::Run(const int time_step, const T *wx_t, const T *u_t,
   cublasSetStream(blas_handle, save_stream);
 }
 
+template struct BackwardPass<half>;
 template struct BackwardPass<float>;
 template struct BackwardPass<double>;
 } // namespace ligru_2_0

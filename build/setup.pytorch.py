@@ -43,7 +43,7 @@ extension = cpp_extension.CUDAExtension(
     'fast_ligru',
     sources = glob('frameworks/pytorch/*.cc'),
     extra_compile_args = extra_args,
-    include_dirs = [os.path.join(base_path, 'lib'), os.path.join(CUDA_HOME, 'include')],
+    include_dirs = [os.path.join(base_path, 'src'), os.path.join(CUDA_HOME, 'include')],
     libraries = ['haste'],
     library_dirs = ['.'])
 

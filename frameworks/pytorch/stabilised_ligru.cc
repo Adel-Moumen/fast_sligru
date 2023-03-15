@@ -40,11 +40,11 @@ std::vector<Tensor> ligru_2_0_forward(const bool training, const Tensor& wx, con
 
   output[0] = h_init;
 
-  AT_DISPATCH_FLOATING_TYPES(
+  AT_DISPATCH_FLOATING_TYPES_AND_HALF(
       wx.scalar_type(), "ligru_2_0_forward", ([&] {
-        layer_norm::ForwardPass<scalar_t> layer_norm1(
+        layer_norm::ForwardPass<typename native_type<scalar_t>::T> layer_norm1(
             seq_length * batch_size, hidden_size * 2, nullptr,
-            nullptr, act_uh_norm_cache.data_ptr<scalar_t>());
+            nullptr, ptr<scalar_t>(act_uh_norm_cache));
 
         layer_norm_ligru::ForwardPass<typename native_type<scalar_t>::T>
             forward(training, batch_size, 0, hidden_size,
@@ -52,10 +52,10 @@ std::vector<Tensor> ligru_2_0_forward(const bool training, const Tensor& wx, con
                     activation,
                     at::cuda::getCurrentCUDAStream());
 
-        forward.Run(seq_length, wx.data_ptr<scalar_t>(), u_t.data_ptr<scalar_t>(),
-                    output.data_ptr<scalar_t>(), cache.data_ptr<scalar_t>(),
-                    layer_norm1, tmp_uh_norm.data_ptr<scalar_t>(),
-                    act_uh.data_ptr<scalar_t>());
+        forward.Run(seq_length, ptr<scalar_t>(wx), ptr<scalar_t>(u_t),
+                    ptr<scalar_t>(output), ptr<scalar_t>(cache),
+                    layer_norm1, ptr<scalar_t>(tmp_uh_norm),
+                    ptr<scalar_t>(act_uh));
       }));
 
   return {output, cache, act_uh, act_uh_norm_cache};
@@ -87,25 +87,25 @@ std::vector<Tensor> ligru_2_0_backward(const Tensor& wx, const Tensor& u, const 
   Tensor du = torch::zeros({hidden_size, hidden_size * 2}, options);
   Tensor dh = torch::zeros({batch_size, hidden_size}, options);
 
-  AT_DISPATCH_FLOATING_TYPES(
+  AT_DISPATCH_FLOATING_TYPES_AND_HALF(
       wx.scalar_type(), "ligru_2_0_backward", ([&] {
 
-        layer_norm::BackwardPass<scalar_t> layer_norm1(
+        layer_norm::BackwardPass<typename native_type<scalar_t>::T> layer_norm1(
             time_steps * batch_size, hidden_size * 2, nullptr,
-            nullptr, act_uh.data_ptr<scalar_t>(), nullptr, nullptr,
-            act_uh_norm_cache.data_ptr<scalar_t>());
+            nullptr, ptr<scalar_t>(act_uh), nullptr, nullptr,
+            ptr<scalar_t>(act_uh_norm_cache));
 
-        layer_norm_ligru::BackwardPass<scalar_t> backward(
+        layer_norm_ligru::BackwardPass<typename native_type<scalar_t>::T> backward(
             batch_size, input_size, hidden_size,
             at::cuda::getCurrentCUDABlasHandle(),
             activation,
             at::cuda::getCurrentCUDAStream());
 
-        backward.Run(time_steps, wx.data_ptr<scalar_t>(),
-                     u.data_ptr<scalar_t>(), h.data_ptr<scalar_t>(),
-                     cache.data_ptr<scalar_t>(), grad_out.data_ptr<scalar_t>(),
-                     tmp_dwx.data_ptr<scalar_t>(), dwx.data_ptr<scalar_t>(),
-                     du.data_ptr<scalar_t>(), dh.data_ptr<scalar_t>(),
+        backward.Run(time_steps, ptr<scalar_t>(wx),
+                     ptr<scalar_t>(u), ptr<scalar_t>(h),
+                     ptr<scalar_t>(cache), ptr<scalar_t>(grad_out),
+                     ptr<scalar_t>(tmp_dwx), ptr<scalar_t>(dwx),
+                     ptr<scalar_t>(du), ptr<scalar_t>(dh),
                      layer_norm1);
       }));
 

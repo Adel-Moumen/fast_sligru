@@ -18,7 +18,23 @@
 #include <cuda_fp16.h>
 
 template <typename T> __device__ __forceinline__ T sigmoid(const T x) {
-  return static_cast<T>(1.0) / (static_cast<T>(1.0) + exp(-x));
+  // FIXME:
+//   template <typename T> __device__ __forceinline__ T sigmoid(const T x) {
+//   // FP16 does not seem to have fast division/exponential instructions
+//   // It seems that even on recent CUDA generations it causes fp16<->fp32 conversions.
+//   // So let's do all the sigmoid math in fp32 and downcast back to fp16 afterwards.
+//   // TODO: benchmark
+//   if constexpr (std::is_same_v<T, half>) {
+//     return static_cast<T>(sigmoid(static_cast<float>(x)));
+//   }
+
+//   const auto exp_result = static_cast<T>(1.0) + exp(-x);
+//   if constexpr (std::is_same_v<T, float>) { return  __fdividef(1.0f, exp_result); }
+//   if constexpr (std::is_same_v<T, double>) { return  __ddividef(1.0, exp_result); }
+//   return static_cast<T>(1.0) / exp_result;
+// }
+  const auto exp_result = static_cast<T>(1.0) + exp(-x);
+  return  __fdividef(1.0f, exp_result);
 }
 
 template <typename T> __device__ __forceinline__ T relu(const T x) {

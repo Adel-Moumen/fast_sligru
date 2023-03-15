@@ -15,6 +15,8 @@
 
 #include <cassert>
 
+#include <cuda_fp16.h>
+
 #include "layer_norm.h"
 
 namespace {
@@ -47,7 +49,7 @@ __global__ void LayerNorm(const int batch_size, const int hidden_size,
   }
 
 
-  const T mean = shared[batch_block_idx] / hidden_size;
+  const T mean = shared[batch_block_idx] / static_cast<T>(hidden_size);
   __syncthreads();
 
   // Reduce squared difference
@@ -66,7 +68,7 @@ __global__ void LayerNorm(const int batch_size, const int hidden_size,
   }
 
   const T invstd =
-      rsqrt(shared[batch_block_idx] / hidden_size + static_cast<T>(1e-5));
+      rsqrt(shared[batch_block_idx] / static_cast<T>(hidden_size) + static_cast<T>(1e-5));
 
   for (int i = index; i < hidden_size; i += stride) {
     if (ApplyBeta)

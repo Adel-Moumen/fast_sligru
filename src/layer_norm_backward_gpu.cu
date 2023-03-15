@@ -71,7 +71,7 @@ __global__ void LayerNormGrad(const int batch_size, const int hidden_size,
   const T dsigma = static_cast<T>(-0.5) * shared[batch_block_idx + 0] * invstd *
                    invstd * invstd;
   const T dmu = (static_cast<T>(-2.0) * shared[batch_block_idx + 1] * dsigma /
-                 hidden_size) -
+                 static_cast<T>(hidden_size)) -
                 (shared[batch_block_idx + 2] * invstd);
 
   for (int i = index; i < hidden_size; i += stride) {
@@ -80,8 +80,8 @@ __global__ void LayerNormGrad(const int batch_size, const int hidden_size,
 
     const T db = cur_dy;
     dx[batch_idx + i] =
-        (static_cast<T>(2.0) * centered_x * dsigma / hidden_size) +
-        (invstd * db) + (dmu / hidden_size);
+        (static_cast<T>(2.0) * centered_x * dsigma / static_cast<T>(hidden_size)) +
+        (invstd * db) + (dmu / static_cast<T>(hidden_size));
   }
 }
 

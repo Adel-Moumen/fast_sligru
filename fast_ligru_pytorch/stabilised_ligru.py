@@ -39,7 +39,8 @@ class ApplyLiGRUCell(torch.autograd.Function):
         """
 
         output, cache, act_uh, act_uh_norm_cache, = fast_ligru.ligru_2_0_forward(
-            training, wx.contiguous(), h.contiguous(), u.T.contiguous(), activation,
+            # FIXME: h/u should directly be fp16 if wx is fp16
+            training, wx.contiguous(), h.contiguous().to(wx.dtype), u.T.contiguous().to(wx.dtype), activation,
         )
 
         ctx.activation = activation
@@ -55,13 +56,14 @@ class ApplyLiGRUCell(torch.autograd.Function):
         h, cache, act_uh, act_uh_norm_cache, wx, u, cache, = ctx.saved_tensors
 
         du, dwx, tmp_dwx, = fast_ligru.ligru_2_0_backward(
+            # FIXME: should be directly in the correct type without .to()
             wx.contiguous(),
-            u.contiguous(),
-            h,
-            cache,
-            act_uh,
-            act_uh_norm_cache,
-            grad_out.contiguous(),
+            u.contiguous().to(wx.dtype),
+            h.to(wx.dtype),
+            cache.to(wx.dtype),
+            act_uh.to(wx.dtype),
+            act_uh_norm_cache.to(wx.dtype),
+            grad_out.contiguous().to(wx.dtype),
             ctx.activation,
         )
 

@@ -2,6 +2,16 @@ AR ?= ar
 CXX ?= g++
 NVCC ?= nvcc -ccbin $(CXX)
 PYTHON ?= python
+HDR = src/*.h
+
+OBJ_DIR=build/obj
+OBJ = \
+	$(OBJ_DIR)/layer_norm_forward_gpu.o \
+	$(OBJ_DIR)/layer_norm_backward_gpu.o \
+	$(OBJ_DIR)/ligru_1_0_forward_gpu.o \
+	$(OBJ_DIR)/ligru_1_0_backward_gpu.o \
+	$(OBJ_DIR)/ligru_2_0_forward_gpu.o \
+	$(OBJ_DIR)/ligru_2_0_backward_gpu.o
 
 ifeq ($(OS),Windows_NT)
 LIBHASTE := libhaste.lib
@@ -17,21 +27,19 @@ AR_FLAGS := -crv $(LIBHASTE)
 NVCC_FLAGS := -std=c++11 -x cu -Xcompiler -fPIC
 endif
 
-LOCAL_CFLAGS := -I/usr/include/eigen3 -I$(CUDA_HOME)/include -Ilib -O3
+LOCAL_CFLAGS := -I/usr/include/eigen3 -I$(CUDA_HOME)/include -Isrc -O3 -use_fast_math --compiler-options -fPIC
 LOCAL_LDFLAGS := -L$(CUDA_HOME)/lib64 -L. -lcudart -lcublas
-GPU_ARCH_FLAGS := -gencode arch=compute_37,code=compute_37 -gencode arch=compute_60,code=compute_60 -gencode arch=compute_70,code=compute_70
+GPU_ARCH_FLAGS := -gencode arch=compute_60,code=compute_60 -gencode arch=compute_70,code=compute_70
 
 
-all: haste fast_ligru clean
+all: fast_ligru clean
 
-haste:
-	$(NVCC) $(GPU_ARCH_FLAGS) -c lib/ligru_1_0_forward_gpu.cu.cc -o lib/ligru_forward_gpu.o $(NVCC_FLAGS) $(LOCAL_CFLAGS)
-	$(NVCC) $(GPU_ARCH_FLAGS) -c lib/ligru_1_0_backward_gpu.cu.cc -o lib/ligru_backward_gpu.o $(NVCC_FLAGS) $(LOCAL_CFLAGS)
-	$(NVCC) $(GPU_ARCH_FLAGS) -c lib/layer_norm_forward_gpu.cu.cc -o lib/layer_norm_forward_gpu.o $(NVCC_FLAGS) $(LOCAL_CFLAGS)
-	$(NVCC) $(GPU_ARCH_FLAGS) -c lib/layer_norm_backward_gpu.cu.cc -o lib/layer_norm_backward_gpu.o $(NVCC_FLAGS) $(LOCAL_CFLAGS)
-	$(NVCC) $(GPU_ARCH_FLAGS) -c lib/ligru_2_0_forward_gpu.cu.cc -o lib/ligru_2_0_forward_gpu.o $(NVCC_FLAGS) $(LOCAL_CFLAGS)
-	$(NVCC) $(GPU_ARCH_FLAGS) -c lib/ligru_2_0_backward_gpu.cu.cc -o lib/ligru_2_0_backward_gpu.o $(NVCC_FLAGS) $(LOCAL_CFLAGS)
-	$(AR) $(AR_FLAGS) lib/*.o
+$(OBJ_DIR)/%.o: src/%.cu $(HDR)
+	@mkdir -p $(OBJ_DIR)
+	$(NVCC) -c -o $@ $< $(GPU_ARCH_FLAGS) $(LOCAL_CFLAGS)
+
+haste: $(OBJ)
+	$(AR) $(AR_FLAGS) $(OBJ)
 
 fast_ligru:
 	@$(eval TMP := $(shell mktemp -d))
