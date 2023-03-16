@@ -20,7 +20,7 @@
 
 namespace {
 
-template <typename T, bool ApplyBeta>
+template <typename T, typename Acc, bool ApplyBeta>
 __global__ void LayerNormGrad(const int batch_size, const int hidden_size,
                               const T *gamma, const T *x, const T *dy,
                               T *dgamma, T *dbeta, T *dx, T *cache) {
@@ -29,24 +29,24 @@ __global__ void LayerNormGrad(const int batch_size, const int hidden_size,
     return;
 
   extern __shared__ int shared_var[];
-  T *shared = reinterpret_cast<T *>(shared_var);
+  auto *shared = reinterpret_cast<Acc *>(shared_var);
   const int index = threadIdx.y;
   const int stride = blockDim.y;
   const int batch_idx = batch * hidden_size;
   const int batch_block_idx = threadIdx.x * stride * 3;
 
-  const T mean = cache[batch * 2 + 0];
-  const T invstd = cache[batch * 2 + 1];
+  const Acc mean = cache[batch * 2 + 0];
+  const Acc invstd = cache[batch * 2 + 1];
 
-  T dsigma_tmp = static_cast<T>(0.0);
-  T dmu1_tmp = static_cast<T>(0.0);
-  T dmu2_tmp = static_cast<T>(0.0);
+  auto dsigma_tmp = static_cast<Acc>(0.0);
+  auto dmu1_tmp = static_cast<Acc>(0.0);
+  auto dmu2_tmp = static_cast<Acc>(0.0);
   for (int i = index; i < hidden_size; i += stride) {
-    const T cur_dy = dy[batch_idx + i];
-    const T centered_x = x[batch_idx + i] - mean;
+    const auto cur_dy = static_cast<Acc>(dy[batch_idx + i]);
+    const auto centered_x = static_cast<Acc>(x[batch_idx + i]) - mean;
     // const T z = centered_x * invstd;
 
-    const T db = cur_dy;
+    const Acc db = cur_dy;
     dsigma_tmp += centered_x * db;
     dmu1_tmp += centered_x;
     dmu2_tmp += db;
@@ -68,20 +68,20 @@ __global__ void LayerNormGrad(const int batch_size, const int hidden_size,
     __syncthreads();
   }
 
-  const T dsigma = static_cast<T>(-0.5) * shared[batch_block_idx + 0] * invstd *
+  const auto dsigma = static_cast<Acc>(-0.5) * shared[batch_block_idx + 0] * invstd *
                    invstd * invstd;
-  const T dmu = (static_cast<T>(-2.0) * shared[batch_block_idx + 1] * dsigma /
-                 static_cast<T>(hidden_size)) -
+  const auto dmu = (static_cast<Acc>(-2.0) * shared[batch_block_idx + 1] * dsigma /
+                 static_cast<Acc>(hidden_size)) -
                 (shared[batch_block_idx + 2] * invstd);
 
   for (int i = index; i < hidden_size; i += stride) {
-    const T cur_dy = dy[batch_idx + i];
-    const T centered_x = x[batch_idx + i] - mean;
+    const auto cur_dy = static_cast<Acc>(dy[batch_idx + i]);
+    const auto centered_x = static_cast<Acc>(x[batch_idx + i]) - mean;
 
-    const T db = cur_dy;
+    const auto db = cur_dy;
     dx[batch_idx + i] =
-        (static_cast<T>(2.0) * centered_x * dsigma / static_cast<T>(hidden_size)) +
-        (invstd * db) + (dmu / static_cast<T>(hidden_size));
+        (static_cast<Acc>(2.0) * centered_x * dsigma / static_cast<Acc>(hidden_size)) +
+        (invstd * db) + (dmu / static_cast<Acc>(hidden_size));
   }
 }
 
@@ -112,15 +112,16 @@ void BackwardPass<T>::RunPartial(const cudaStream_t &stream,
   dim3 blockDim(4, 256);
   dim3 gridDim;
   gridDim.x = (minibatch + blockDim.x - 1) / blockDim.x;
-  const int shared_mem_size = sizeof(T) * blockDim.x * blockDim.y * 3;
+  using Acc = typename LNormTypeSelector<T>::type;
+  const int shared_mem_size = sizeof(Acc) * blockDim.x * blockDim.y * 3;
 
   if (beta_ && dbeta_) {
-    LayerNormGrad<T, true><<<gridDim, blockDim, shared_mem_size, stream>>>(
+    LayerNormGrad<T, Acc, true><<<gridDim, blockDim, shared_mem_size, stream>>>(
         minibatch, hidden_size_, gamma_,
         x_ + (partial_ - minibatch) * hidden_size_, dy, dgamma_, dbeta_, dx,
         cache_ + (partial_ - minibatch) * 2);
   } else {
-    LayerNormGrad<T, false><<<gridDim, blockDim, shared_mem_size, stream>>>(
+    LayerNormGrad<T, Acc, false><<<gridDim, blockDim, shared_mem_size, stream>>>(
         minibatch, hidden_size_, gamma_,
         x_ + (partial_ - minibatch) * hidden_size_, dy, dgamma_, nullptr, dx,
         cache_ + (partial_ - minibatch) * 2);
@@ -129,6 +130,7 @@ void BackwardPass<T>::RunPartial(const cudaStream_t &stream,
   partial_ -= minibatch;
 }
 
+template class BackwardPass<half>;
 template class BackwardPass<float>;
 template class BackwardPass<double>;
 

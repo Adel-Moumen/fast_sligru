@@ -18,9 +18,14 @@
 #include <cublas_v2.h>
 #include <cuda_runtime_api.h>
 
+#include "layer_norm.h"
+
 namespace haste {
 namespace v0 {
 namespace ligru_2_0 {
+
+template<class T>
+using ActivationFunction = T(T);
 
 template <typename T> class ForwardPass {
 public:
@@ -68,9 +73,16 @@ public:
            layer_norm::BackwardPass<T> &layer_norm1);
 
 private:
-  void IterateInternal(const T *u_t, const T *h, const T *v, const T *dh_new,
-                       T *dh, T *tmp_dwx, T *dwx,
-                       layer_norm::BackwardPass<T> &layer_norm1);
+  void IterateInternal(
+    const T *u_t,
+    const T *h,
+    const T *v,
+    const T *dh_new,
+    T *dh,
+    T *tmp_dwx,
+    T *dwx,
+    layer_norm::BackwardPass<T>& layer_norm1
+  );
 
   struct private_data;
   private_data *data_;

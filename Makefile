@@ -5,6 +5,7 @@ PYTHON ?= python
 HDR = src/*.h
 
 OBJ_DIR=build/obj
+
 OBJ = \
 	$(OBJ_DIR)/layer_norm_forward_gpu.o \
 	$(OBJ_DIR)/layer_norm_backward_gpu.o \
@@ -18,16 +19,16 @@ LIBHASTE := libhaste.lib
 CUDA_HOME ?= $(CUDA_PATH)
 AR := lib
 AR_FLAGS := /nologo /out:$(LIBHASTE)
-NVCC_FLAGS := -x cu -Xcompiler "/MD"
+NVCC_FLAGS := -std=c++14 -x cu -Xcompiler "/MD"
 else
 LIBHASTE := libhaste.a
 CUDA_HOME ?= /usr/local/cuda
 AR ?= ar
 AR_FLAGS := -crv $(LIBHASTE)
-NVCC_FLAGS := -std=c++11 -x cu -Xcompiler -fPIC
+NVCC_FLAGS := -std=c++14 -x cu -Xcompiler -fPIC
 endif
 
-LOCAL_CFLAGS := -I/usr/include/eigen3 -I$(CUDA_HOME)/include -Isrc -O3 -use_fast_math --compiler-options -fPIC
+LOCAL_CFLAGS := -I/usr/include/eigen3 -I$(CUDA_HOME)/include -Isrc -O3 -use_fast_math --compiler-options
 LOCAL_LDFLAGS := -L$(CUDA_HOME)/lib64 -L. -lcudart -lcublas
 GPU_ARCH_FLAGS := -gencode arch=compute_60,code=compute_60 -gencode arch=compute_70,code=compute_70
 
@@ -36,7 +37,7 @@ all: fast_ligru clean
 
 $(OBJ_DIR)/%.o: src/%.cu $(HDR)
 	@mkdir -p $(OBJ_DIR)
-	$(NVCC) -c -o $@ $< $(GPU_ARCH_FLAGS) $(LOCAL_CFLAGS)
+	$(NVCC) -c -o $@ $< $(GPU_ARCH_FLAGS) $(LOCAL_CFLAGS) $(NVCC_FLAGS)
 
 haste: $(OBJ)
 	$(AR) $(AR_FLAGS) $(OBJ)

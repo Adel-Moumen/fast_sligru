@@ -6,6 +6,28 @@ namespace haste {
 namespace v0 {
 namespace layer_norm {
 
+/// Exposes a typedef ::type depending on the accumulator data type that should
+/// be used during the layer normalization. For FP16, this is FP32, as FP16
+/// calculations may cause an unnacceptable amount of computation.
+template<typename T>
+struct LNormTypeSelector {};
+
+// Support FP64
+template<>
+struct LNormTypeSelector<double> {
+    using type = double;
+};
+
+// Support FP32
+template<>
+struct LNormTypeSelector<float> {
+    using type = float;
+};
+
+// Convert FP16 to FP32
+template<>
+struct LNormTypeSelector<half> : LNormTypeSelector<float> {};
+
 template <typename T> class ForwardPass {
 public:
   // gamma: [H]
