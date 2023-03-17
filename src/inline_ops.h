@@ -18,7 +18,7 @@
 #include <cuda_fp16.h>
 
 template <typename T> __device__ __forceinline__ T sigmoid(const T x) {
-  return static_cast<T>(1.0) / static_cast<T>(1.0) + exp(-x);
+  return static_cast<T>(1.0) / (static_cast<T>(1.0) + exp(-x));
 }
 
 template <typename T> __device__ __forceinline__ T relu(const T x) {
