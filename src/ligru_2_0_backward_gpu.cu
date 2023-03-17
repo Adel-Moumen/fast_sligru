@@ -123,7 +123,7 @@ auto wrap_pointwise(int activation_method)
     case 0: return PointwiseOperations<T, d_relu>;
     case 1: return PointwiseOperations<T, d_leaky_relu>;
     case 2: return PointwiseOperations<T, d_sin>;
-    case 3: return PointwiseOperations<T, tanh>;
+    case 3: return PointwiseOperations<T, d_tanh>;
     }
 
     throw std::invalid_argument("Invalid activation_method passed in backward");
