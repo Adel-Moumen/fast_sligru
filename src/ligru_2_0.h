@@ -42,13 +42,28 @@ public:
   // Blocks until all iterations have completed executing on the GPU.
   ~ForwardPass();
 
-  void Run(const int time_step, T *wx, const T *u, T *h, T *v,
-           layer_norm::ForwardPass<T> &layer_norm1, T *tmp_uh_norm, T *tmp_uh);
+  void Run(
+    const int time_step,
+    T *wx,
+    const T *u,
+    T *h,
+    T *v,
+    layer_norm::ForwardPass<T> &layer_norm1,
+    T *tmp_uh_norm,
+    T *tmp_uh
+  );
 
 private:
-  void IterateInternal(const T *u, const T *h, T *h_out, T *v, T *tmp_wx,
-                       T *tmp_uh, T *tmp_uh_norm,
-                       layer_norm::ForwardPass<T> &layer_norm1);
+  void IterateInternal(
+    const T *u,
+    const T *h,
+    T *h_out,
+    T *v,
+    T *tmp_wx,
+    T *tmp_uh,
+    T *tmp_uh_norm,
+    layer_norm::ForwardPass<T> &layer_norm1
+  );
 
   struct private_data;
   private_data *data_;
@@ -68,9 +83,19 @@ public:
   // Blocks until all iterations have completed executing on the GPU.
   ~BackwardPass();
 
-  void Run(const int time_step, const T *wx_t, const T *u_t, const T *h,
-           const T *v, const T *grad_out, T *tmp_dwx, T *dwx, T *du, T *dh,
-           layer_norm::BackwardPass<T> &layer_norm1);
+  void Run(
+    const int time_step,
+    const T *wx_t,
+    const T *u_t,
+    const T *h,
+    const T *v,
+    const T *grad_out,
+    T *tmp_dwx,
+    T *dwx,
+    T *du,
+    T *dh,
+    layer_norm::BackwardPass<T> &layer_norm1
+  );
 
 private:
   void IterateInternal(
