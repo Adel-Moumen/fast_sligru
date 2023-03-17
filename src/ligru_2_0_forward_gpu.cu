@@ -128,7 +128,7 @@ auto wrap_pointwise_activation(int activation_method)
     case 3: return PointwiseOperations<T, tanh, training>;
     }
 
-    throw std::invalid_argument("Invalid activation_method passed");
+    throw std::invalid_argument("Invalid activation_method passed in forward");
 }
 
 // returns a PointwiseOperations kernel given a runtime

@@ -15,6 +15,7 @@
 
 #include <cublas_v2.h>
 #include <cuda_runtime_api.h>
+#include <stdexcept>
 
 #include "blas.h"
 #include "device_assert.h"
@@ -25,11 +26,16 @@
 
 namespace {
 
-template <typename T>
-__global__ void PointwiseOperationsReLU(
-    const int batch_dim, const int hidden_dim, const T *h, const T *v,
-    T *dh_prev, const T *grad_out,
-    T *dwx) {
+template <typename T, haste::v0::ligru_2_0::ActivationFunction<T> d_activation>
+__global__ void PointwiseOperations(
+    const int batch_dim,
+    const int hidden_dim,
+    const T *h,
+    const T *v,
+    T *dh_prev,
+    const T *grad_out,
+    T *dwx
+) {
   const int row = blockDim.x * blockIdx.x + threadIdx.x;
   const int col = blockDim.y * blockIdx.y + threadIdx.y;
 
@@ -49,109 +55,7 @@ __global__ void PointwiseOperationsReLU(
   const T a = v[a_idx];
   const T hcand = v[hcand_idx];
 
-  const T dat = d_relu(a) * (static_cast<T>(1.0) - z) * dh;
-  const T dzt = (h[base_idx] - hcand) * dh * (z * (static_cast<T>(1.0) - z));
-
-  dh_prev[base_idx] = dh * z;
-
-  const int idx = col * (hidden_dim * 2) + row;
-  dwx[idx + 1 * hidden_dim] = dzt;
-  dwx[idx + 0 * hidden_dim] = dat;
-}
-
-template <typename T>
-__global__ void PointwiseOperationsLeakyReLU(
-    const int batch_dim, const int hidden_dim, const T *h, const T *v,
-    T *dh_prev, const T *grad_out,
-    T *dwx) {
-  const int row = blockDim.x * blockIdx.x + threadIdx.x;
-  const int col = blockDim.y * blockIdx.y + threadIdx.y;
-
-  if (row >= hidden_dim || col >= batch_dim)
-    return;
-
-  const int base_idx = col * hidden_dim + row;
-
-  T dh = grad_out[base_idx] + dh_prev[base_idx];
-
-  const int stride3_base_idx = col * (hidden_dim * 3) + row;
-  const int z_idx = stride3_base_idx + 1 * hidden_dim;
-  const int a_idx = stride3_base_idx + 0 * hidden_dim;
-  const int hcand_idx = stride3_base_idx + 2 * hidden_dim;
-
-  const T z = v[z_idx];
-  const T a = v[a_idx];
-  const T hcand = v[hcand_idx];
-
-  const T dat = d_leaky_relu(a) * (static_cast<T>(1.0) - z) * dh;
-  const T dzt = (h[base_idx] - hcand) * dh * (z * (static_cast<T>(1.0) - z));
-
-  dh_prev[base_idx] = dh * z;
-
-  const int idx = col * (hidden_dim * 2) + row;
-  dwx[idx + 1 * hidden_dim] = dzt;
-  dwx[idx + 0 * hidden_dim] = dat;
-}
-
-template <typename T>
-__global__ void PointwiseOperationsTanh(
-    const int batch_dim, const int hidden_dim, const T *h, const T *v,
-    T *dh_prev, const T *grad_out,
-    T *dwx) {
-  const int row = blockDim.x * blockIdx.x + threadIdx.x;
-  const int col = blockDim.y * blockIdx.y + threadIdx.y;
-
-  if (row >= hidden_dim || col >= batch_dim)
-    return;
-
-  const int base_idx = col * hidden_dim + row;
-
-  T dh = grad_out[base_idx] + dh_prev[base_idx];
-
-  const int stride3_base_idx = col * (hidden_dim * 3) + row;
-  const int z_idx = stride3_base_idx + 1 * hidden_dim;
-  const int a_idx = stride3_base_idx + 0 * hidden_dim;
-  const int hcand_idx = stride3_base_idx + 2 * hidden_dim;
-
-  const T z = v[z_idx];
-  const T a = v[a_idx];
-  const T hcand = v[hcand_idx];
-
-  const T dat = d_tanh(a) * (static_cast<T>(1.0) - z) * dh;
-  const T dzt = (h[base_idx] - hcand) * dh * (z * (static_cast<T>(1.0) - z));
-
-  dh_prev[base_idx] = dh * z;
-
-  const int idx = col * (hidden_dim * 2) + row;
-  dwx[idx + 1 * hidden_dim] = dzt;
-  dwx[idx + 0 * hidden_dim] = dat;
-}
-
-template <typename T>
-__global__ void PointwiseOperationsSin(
-    const int batch_dim, const int hidden_dim, const T *h, const T *v,
-    T *dh_prev, const T *grad_out,
-    T *dwx) { 
-  const int row = blockDim.x * blockIdx.x + threadIdx.x;
-  const int col = blockDim.y * blockIdx.y + threadIdx.y;
-
-  if (row >= hidden_dim || col >= batch_dim)
-    return;
-
-  const int base_idx = col * hidden_dim + row;
-
-  T dh = grad_out[base_idx] + dh_prev[base_idx];
-
-  const int stride3_base_idx = col * (hidden_dim * 3) + row;
-  const int z_idx = stride3_base_idx + 1 * hidden_dim;
-  const int a_idx = stride3_base_idx + 0 * hidden_dim;
-  const int hcand_idx = stride3_base_idx + 2 * hidden_dim;
-
-  const T z = v[z_idx];
-  const T a = v[a_idx];
-  const T hcand = v[hcand_idx];
-
-  const T dat = d_sin(a) * (static_cast<T>(1.0) - z) * dh;
+  const T dat = d_activation(a) * (static_cast<T>(1.0) - z) * dh;
   const T dzt = (h[base_idx] - hcand) * dh * (z * (static_cast<T>(1.0) - z));
 
   dh_prev[base_idx] = dh * z;
@@ -211,6 +115,20 @@ template <typename T> BackwardPass<T>::~BackwardPass() {
   delete data_;
 }
 
+template<typename T>
+auto wrap_pointwise(int activation_method)
+{
+    switch (activation_method)
+    {
+    case 0: return PointwiseOperations<T, d_relu>;
+    case 1: return PointwiseOperations<T, d_leaky_relu>;
+    case 2: return PointwiseOperations<T, d_sin>;
+    case 3: return PointwiseOperations<T, tanh>;
+    }
+
+    throw std::invalid_argument("Invalid activation_method passed in backward");
+}
+
 template <typename T>
 void BackwardPass<T>::IterateInternal(
     const T *u_t, const T *h, const T *v, const T *grad_out, T *dh, T *tmp_dwx,
@@ -228,23 +146,9 @@ void BackwardPass<T>::IterateInternal(
   const dim3 gridDim((hidden_size + blockDim.x - 1) / blockDim.x,
                      (batch_size + blockDim.y - 1) / blockDim.y);
 
-  if (data_->activation == 0) {
-    PointwiseOperationsReLU<T><<<gridDim, blockDim, 0, stream1>>>(
+  const auto kernel = wrap_pointwise<T>(data_->activation);
+  kernel<<<gridDim, blockDim, 0, stream1>>>(
         batch_size, hidden_size, h, v, dh, grad_out, dwx);
-    cudaEventRecord(event, stream1);
-  } else if (data_->activation == 1) {
-    PointwiseOperationsLeakyReLU<T><<<gridDim, blockDim, 0, stream1>>>(
-        batch_size, hidden_size, h, v, dh, grad_out, dwx);
-    cudaEventRecord(event, stream1);
-  } else if (data_->activation == 2) {
-    PointwiseOperationsSin<T><<<gridDim, blockDim, 0, stream1>>>(
-        batch_size, hidden_size, h, v, dh, grad_out, dwx);
-    cudaEventRecord(event, stream1);
-  } else if (data_->activation == 3) {
-    PointwiseOperationsTanh<T><<<gridDim, blockDim, 0, stream1>>>(
-        batch_size, hidden_size, h, v, dh, grad_out, dwx);
-    cudaEventRecord(event, stream1);
-  }
 
   cudaEventRecord(event, stream1);
   cublasSetStream(blas_handle, stream1);

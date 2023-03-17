@@ -7,8 +7,8 @@ namespace v0 {
 namespace layer_norm {
 
 /// Exposes a typedef ::type depending on the accumulator data type that should
-/// be used during the layer normalization. For FP16, this is FP32, as FP16
-/// calculations may cause an unnacceptable amount of computation.
+/// be used during the layer normalization. We want to compute LN in at least
+/// FP32.
 template<typename T>
 struct LNormTypeSelector {};
 
