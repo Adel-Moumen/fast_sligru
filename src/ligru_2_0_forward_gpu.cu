@@ -50,7 +50,7 @@ __global__ void PointwiseOperations(
   const int z_idx = weight_idx + 1 * hidden_dim;
 
   const T z = sigmoid(wx[z_idx] + uh[z_idx]);
-  const T a = wx[a_idx] + uh[z_idx];
+  const T a = wx[a_idx] + uh[a_idx];
 
   const T hcand = activation(a); 
 
