@@ -38,9 +38,10 @@ class ApplyLiGRUCell(torch.autograd.Function):
             output : output of the ligru cell
         """
 
+        u = u.to(wx.dtype)  # necessary if FP16 as the weights will be FP32
+
         output, cache, act_uh, act_uh_norm_cache, = fast_ligru.ligru_2_0_forward(
-            # FIXME: h/u should directly be fp16 if wx is fp16
-            training, wx.contiguous(), h.contiguous().to(wx.dtype), u.T.contiguous().to(wx.dtype), activation,
+            training, wx.contiguous(), h.contiguous(), u.T.contiguous(), activation,
         )
 
         ctx.activation = activation
@@ -56,14 +57,13 @@ class ApplyLiGRUCell(torch.autograd.Function):
         h, cache, act_uh, act_uh_norm_cache, wx, u, cache, = ctx.saved_tensors
 
         du, dwx, tmp_dwx, = fast_ligru.ligru_2_0_backward(
-            # FIXME: should be directly in the correct type without .to()
             wx.contiguous(),
-            u.contiguous().to(wx.dtype),
-            h.to(wx.dtype),
-            cache.to(wx.dtype),
-            act_uh.to(wx.dtype),
-            act_uh_norm_cache.to(wx.dtype),
-            grad_out.contiguous().to(wx.dtype),
+            u.contiguous(),
+            h,
+            cache,
+            act_uh,
+            act_uh_norm_cache,
+            grad_out.contiguous(),
             ctx.activation,
         )
 
@@ -336,7 +336,7 @@ class LiGRU_Layer(torch.nn.Module):
         if hx is not None:
             h = self._ligru_cell(w, hx)
         else:
-            h = self._ligru_cell(w, self.h_init)
+            h = self._ligru_cell(w, self.h_init.to(w.dtype))
 
         if self.bidirectional:
             h_f, h_b = h.chunk(2, dim=0)
