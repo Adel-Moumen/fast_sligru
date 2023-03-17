@@ -43,16 +43,13 @@ template <typename T> struct blas {
 };
 
 template <> struct blas<__half> {
-  static constexpr auto *gemm = &cublasHgemm;
-  static constexpr auto cuda_type = CUDA_R_16F;
+  static constexpr decltype(cublasHgemm) *gemm = &cublasHgemm;
 };
 
 template <> struct blas<float> {
-  static constexpr auto *gemm = &cublasSgemm;
-  static constexpr auto cuda_type = CUDA_R_32F;
+  static constexpr decltype(cublasSgemm) *gemm = &cublasSgemm;
 };
 
 template <> struct blas<double> {
-  static constexpr auto *gemm = &cublasDgemm;
-  static constexpr auto cuda_type = CUDA_R_64F;
+  static constexpr decltype(cublasDgemm) *gemm = &cublasDgemm;
 };
