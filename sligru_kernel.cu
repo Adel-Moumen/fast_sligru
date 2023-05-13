@@ -12,9 +12,22 @@ __device__ __forceinline__ scalar_t sigmoid(scalar_t z) {
 }
 
 template <typename scalar_t>
-__device__ __forceinline__ scalar_t relu(scalar_t z) {
-  return fmaxf(0.0, z);
+__device__ __forceinline__ scalar_t d_sigmoid(scalar_t z) {
+  return (1.0 - z) * z;
 }
+
+template <typename scalar_t>
+__device__ __forceinline__ scalar_t relu(scalar_t z) {
+  return ((z > static_cast<scalar_t>(0.0f) ) ? z : static_cast<scalar_t>(0.0f));
+}
+
+
+template <typename scalar_t>
+__device__ __forceinline__ scalar_t d_relu(scalar_t z) {
+  return (z > 0.0) ? 1.0 : 0.0;
+}
+
+
 
 
 template <typename scalar_t>
@@ -35,6 +48,34 @@ __global__ void sligru_cuda_forward_kernel(
     hcand[b][h] = relu(at[b][h]) * drop_mask[b][h];
     ht[b][h] = ht_pred[b][h] * update_gate[b][h] + (1 - update_gate[b][h]) * hcand[b][h];
     
+  }
+}
+
+template <typename scalar_t>
+__global__ void sligru_cuda_backward_kernel(
+    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> grad_out,
+    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> dh_prev,
+    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> zt,
+    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> at,
+    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> ht,
+    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> hcand,
+    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> drop_mask,
+    torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> dat,
+    torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> dzt,
+    torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> grad_dh_prev) {
+  //batch index
+  const int b = blockIdx.y;
+  // column index
+  const int h = blockIdx.x * blockDim.x + threadIdx.x;
+
+  if (h < dat.size(1)){
+    auto dh = grad_out[b][h]  + dh_prev[b][h];
+
+    dat[b][h] = d_relu(at[b][h]) * drop_mask[b][h] * (1. - zt[b][h]) * dh;
+
+    dzt[b][h] = (ht[b][h] - hcand[b][h]) * dh * d_sigmoid(zt[b][h]);
+    
+    grad_dh_prev[b][h] = dh * zt[b][h];
   }
 }
 
@@ -98,4 +139,60 @@ std::vector<torch::Tensor> sligru_cuda_cell_forward(
   }));
 
   return {ht, hcand, update_gate, at, recurrent_gate, mean, rstd};
+}
+
+
+std::vector<torch::Tensor> sligru_cuda_cell_backward(
+  const torch::Tensor& grad_out,
+  const torch::Tensor& dh_prev,
+  const torch::Tensor& zt,
+  const torch::Tensor& at,
+  const torch::Tensor& drop_mask,
+  const torch::Tensor& ht,
+  const torch::Tensor& hcand,
+  const torch::Tensor& u,
+  const torch::Tensor& du_prev,
+  const torch::Tensor& recurrent_gate,
+  const torch::Tensor& mean,
+  const torch::Tensor& rstd,
+  const int normalized_shape
+) {
+
+  const auto batch_size = dh_prev.size(0);
+  const auto hidden_size = dh_prev.size(1);
+
+  const int threads = 1024;
+  const dim3 blocks((hidden_size + threads - 1) / threads, batch_size);
+
+  auto options = torch::TensorOptions().dtype(grad_out.dtype()).device(
+      torch::kCUDA, grad_out.device().index());
+
+  auto dat = torch::zeros({batch_size, hidden_size}, options);
+  auto dzt = torch::zeros({batch_size, hidden_size}, options);
+  auto grad_dh_prev = torch::zeros({batch_size, hidden_size}, options);
+
+  AT_DISPATCH_FLOATING_TYPES_AND_HALF(
+    dat.type(), "sligru_backward_cuda", ([&] {
+    sligru_cuda_backward_kernel<scalar_t><<<blocks, threads>>>(
+        grad_out.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>(),
+        dh_prev.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>(),
+        zt.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>(),
+        at.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>(),
+        ht.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>(),
+        hcand.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>(),
+        drop_mask.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>(),
+        dat.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>(),
+        dzt.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>(),
+        grad_dh_prev.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>());
+  }));
+
+    auto dwx = torch::cat({dat, dzt}, /*dim=*/1);
+    auto dlayer_norm = at::native_layer_norm_backward(
+        dwx, recurrent_gate, normalized_shape, mean, rstd, c10::nullopt,
+        c10::nullopt, {true, false, false});
+
+    auto grad_grad_dh_prev = at::addmm(grad_dh_prev,  std::get<0>(dlayer_norm), u); 
+    auto du = at::addmm(du_prev, std::get<0>(dlayer_norm).t(), ht); 
+
+    return {dwx, grad_grad_dh_prev, du};
 }

@@ -16,6 +16,22 @@ std::vector<torch::Tensor> sligru_cuda_cell_forward(
   double eps
 ) ;
 
+std::vector<torch::Tensor> sligru_cuda_cell_backward(
+  const torch::Tensor& grad_out,
+  const torch::Tensor& dh_prev,
+  const torch::Tensor& zt,
+  const torch::Tensor& at,
+  const torch::Tensor& drop_mask,
+  const torch::Tensor& ht,
+  const torch::Tensor& hcand,
+  const torch::Tensor& u,
+  const torch::Tensor& du_prev,
+  const torch::Tensor& recurrent_gate,
+  const torch::Tensor& mean,
+  const torch::Tensor& rstd,
+  const int normalized_shape
+);
+
 std::vector<torch::Tensor> sligru_forward(
   const torch::Tensor& wx,      // [B, H * 2]
   const torch::Tensor& ht_pred, // [B, H]
@@ -23,52 +39,6 @@ std::vector<torch::Tensor> sligru_forward(
   const torch::Tensor& drop_mask, // [B, H]
   const int normalized_shape,
   const double eps) {
-  
-  // const int batch = wx.size(0);
-  // const int time = wx.size(1);
-  // const int hidden = ht_pred.size(1);
-
-  // auto ht_out = torch::zeros({batch, time, hidden}, wx.device());
-
-  //std::cout << ht_out.sizes() << std::endl;
-  //std::cout << ht_pred.sizes() << std::endl;
-  //std::cout << "here" << std::endl;
-
-  // ht_out.index_put_({Slice(), 0}, ht_pred);
-
-  //std::cout << ht_out.index({Slice(), 0}) << std::endl;
-
-  /*
-  for (int64_t t = 0; t < time; ++t) {
-    //std::cout << "---------------------" << std::endl;
-    //std::cout << "t = " << t << std::endl;
-    //std::cout << wx.index({Slice(), t-1}) << std::endl;
-    //std::cout << ht_out.index({Slice(), t-1}) << std::endl;
-    // auto out = sligru_cuda_cell_forward(wx.index({Slice(), t-1}), ht_out.index({Slide(), t-1}), u, drop_mask, normalized_shape, eps);
-    // std:: cout << std::get<0>(out) << std::endl;
-
-    if (t == 0) {
-      ht_out.index({Slice(), t}) =  sligru_cuda_cell_forward(
-        wx.index({Slice(), t}), 
-        ht_pred, 
-        u, 
-        drop_mask, 
-        normalized_shape, 
-        eps
-      )[0];
-    }
-    else {
-      ht_out.index({Slice(), t}) =  sligru_cuda_cell_forward(
-        wx.index({Slice(), t}), 
-        ht_out.index({Slice(), t-1}), 
-        u, 
-        drop_mask, 
-        normalized_shape, 
-        eps
-      )[0];
-    }
-  }
-  */
 
   return sligru_cuda_cell_forward(
     wx, 
@@ -78,10 +48,45 @@ std::vector<torch::Tensor> sligru_forward(
     normalized_shape, 
     eps
   );
+}
 
+std::vector<torch::Tensor> sligru_backward(
+  const torch::Tensor& grad_out,
+  const torch::Tensor& dh_prev,
+  const torch::Tensor& zt,
+  const torch::Tensor& at,
+  const torch::Tensor& drop_mask,
+  const torch::Tensor& ht,
+  const torch::Tensor& hcand,
+  const torch::Tensor& u,
+  const torch::Tensor& du_prev,
+  const torch::Tensor& recurrent_gate,
+  const torch::Tensor& mean,
+  const torch::Tensor& rstd,
+  const int normalized_shape) {
+  CHECK_INPUT(grad_out);
+  CHECK_INPUT(dh_prev);
+  CHECK_INPUT(zt);
+  CHECK_INPUT(at);
+  CHECK_INPUT(drop_mask);
+  CHECK_INPUT(ht);
+  CHECK_INPUT(hcand);
+  CHECK_INPUT(u);
+  CHECK_INPUT(du_prev);
+  CHECK_INPUT(recurrent_gate);
+  CHECK_INPUT(mean);
+  CHECK_INPUT(rstd);
+
+  return sligru_cuda_cell_backward(
+    grad_out, dh_prev, zt, 
+    at, drop_mask, ht,
+     hcand, u, du_prev,
+     recurrent_gate, mean, rstd,
+     normalized_shape);
 }
 
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("forward", &sligru_forward, "SLi-GRU forward (CUDA)");
+  m.def("backward", &sligru_backward, "SLi-GRU backward (CUDA)");
 }
