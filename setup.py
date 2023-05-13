@@ -6,7 +6,7 @@ setup(
     ext_modules=[
         CppExtension(
             'fast_ligru',
-            ['fast_ligru.cpp', 'fast_ligru.cu']
+            ['ligru.cpp']
         ),
     ],
     cmdclass={
