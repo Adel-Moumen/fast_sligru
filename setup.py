@@ -5,7 +5,7 @@ setup(
     name='fast_sligru_cpp',
     ext_modules=[
         CppExtension(
-            'fast_ligru_cpp',
+            'fast_sligru_cpp',
             ['sligru.cpp', 'sligru.cu']
         ),
     ],
