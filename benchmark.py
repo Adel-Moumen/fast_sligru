@@ -69,14 +69,13 @@ if __name__ == "__main__":
     x = torch.randn(batch_size, seq_length, input_size, device="cuda")
     w = torch.randn(hidden_size * 2, input_size).to("cuda")
     u = torch.randn(hidden_size * 2, hidden_size).to("cuda")
-    ht = torch.zeros(batch_size, hidden_size, device="cuda")
+    ht = torch.ones(batch_size, hidden_size, device="cuda")
     drop_mask = torch.randn((batch_size, hidden_size), device="cuda", requires_grad=False)
     normalized_shape = u.size(0)
     eps = 1e-5
 
     wx = x @ w.T 
 
-    # fast_sligru_cpp.forward(wx[:, 0], ht, u, drop_mask, normalized_shape, eps)
     out1 = ligru_cell(wx, u, ht, drop_mask)
 
 
