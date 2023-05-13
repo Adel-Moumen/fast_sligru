@@ -5,15 +5,37 @@ import time
 
 
 relu = torch.nn.ReLU()
+batch_size, seq_length, hidden_size, input_size = 16, 100, 512, 100
+ln = torch.nn.LayerNorm(2 * hidden_size, elementwise_affine=False)
 
-def ligru_cell(wx, u, ht):
+@torch.jit.script
+def ligru_cell(wx, u, ht, drop_mask):
     hiddens = []
-    for t in range(x.shape[1]):
-        gates = wx[:, t] + ht @ u.T
+    for t in range(wx.shape[1]):
+        gates = wx[:, t] + ln(ht @ u.T)
         at, zt = gates.chunk(2, 1)
         zt = torch.sigmoid(zt)
-        hcand = relu(at)
+        hcand = relu(at) * drop_mask
         ht = zt * ht + (1 - zt) * hcand 
+        hiddens.append(ht)
+    
+    # Stacking hidden states
+    h = torch.stack(hiddens, dim=1)
+    return h
+
+def cuda_ligru_cell(normalized_shape, eps, drop_mask, wx, u, ht):
+    hiddens = []
+
+    for t in range(x.shape[1]):
+        ht = fast_sligru_cpp.forward(
+            wx[:, t], 
+            ht, 
+            u,
+            drop_mask,
+            normalized_shape,
+            eps
+        )[0]
+
         hiddens.append(ht)
     
     # Stacking hidden states
@@ -43,21 +65,28 @@ def benchmark(fct, *kargs, n_iters=5):
 
 
 if __name__ == "__main__":
-    batch_size, seq_length, hidden_size, input_size = 4, 10, 4, 10
 
     x = torch.randn(batch_size, seq_length, input_size, device="cuda")
     w = torch.randn(hidden_size * 2, input_size).to("cuda")
     u = torch.randn(hidden_size * 2, hidden_size).to("cuda")
     ht = torch.zeros(batch_size, hidden_size, device="cuda")
-    drop_mask = torch.randn((batch_size, hidden_size), device="cuda", requires_grad=False, dtype=torch.double)
+    drop_mask = torch.randn((batch_size, hidden_size), device="cuda", requires_grad=False)
     normalized_shape = u.size(0)
     eps = 1e-5
 
     wx = x @ w.T 
 
+    # fast_sligru_cpp.forward(wx[:, 0], ht, u, drop_mask, normalized_shape, eps)
+    out1 = ligru_cell(wx, u, ht, drop_mask)
 
-    fast_sligru_cpp.ligru_forward(wx[:, 0], ht, u, drop_mask, normalized_shape, eps)
 
+    out2 = cuda_ligru_cell(normalized_shape, eps, drop_mask, wx, u, ht)
+    
+    assert torch.allclose(out1, out2, atol=10-5)
 
-    #warmup(ligru_cell, wx, u, ht, n_iters=10)
-    #print(benchmark(ligru_cell, wx, u, ht, n_iters=10))
+    warmup(ligru_cell, wx, u, ht, drop_mask, n_iters=10)
+    print(benchmark(ligru_cell, wx, u, ht, drop_mask, n_iters=20))
+
+        
+    warmup(cuda_ligru_cell, normalized_shape, eps, drop_mask, wx, u, ht, n_iters=10)
+    print(benchmark(cuda_ligru_cell, normalized_shape, eps, drop_mask, wx, u, ht, n_iters=20))

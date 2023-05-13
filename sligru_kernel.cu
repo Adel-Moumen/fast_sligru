@@ -3,7 +3,6 @@
 #include <cuda_runtime.h>
 #include <vector>
 
-  /*
 
 namespace {
   // tanh(zt * 0.5) * 0.5 + 0.5;
@@ -41,7 +40,6 @@ __global__ void sligru_cuda_forward_kernel(
 
 } // namespace
 
-*/
 
 
 std::vector<torch::Tensor> sligru_cuda_cell_forward(
@@ -53,7 +51,6 @@ std::vector<torch::Tensor> sligru_cuda_cell_forward(
   double eps
 ) {
 
-  /*
 
   const int batch_size = wx.size(0);
   const int hidden_size = ht_pred.size(1);
@@ -100,7 +97,5 @@ std::vector<torch::Tensor> sligru_cuda_cell_forward(
         ht.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>());
   }));
 
-  */
-
-  return {wx};
+  return {ht, hcand, update_gate, at, recurrent_gate, mean, rstd};
 }
