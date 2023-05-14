@@ -21,7 +21,6 @@ __device__ __forceinline__ scalar_t relu(scalar_t z) {
   return ((z > static_cast<scalar_t>(0.0f) ) ? z : static_cast<scalar_t>(0.0f));
 }
 
-
 template <typename scalar_t>
 __device__ __forceinline__ scalar_t d_relu(scalar_t z) {
   return (z > 0.0) ? 1.0 : 0.0;
@@ -38,14 +37,18 @@ __global__ void sligru_cuda_forward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> drop_mask,
     torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> update_gate,
     torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> hcand,
-    torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> ht) {
+    torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> ht,
+    const bool training) {
   //batch index
   const int b = blockIdx.y;
   // column index
   const int h = blockIdx.x * blockDim.x + threadIdx.x;
   if (h < at.size(1)){
     update_gate[b][h] = sigmoid(zt[b][h]);
-    hcand[b][h] = relu(at[b][h]) * drop_mask[b][h];
+    hcand[b][h] = relu(at[b][h]);
+    if (training) {
+      hcand[b][h] *= drop_mask[b][h];
+    }
     ht[b][h] = ht_pred[b][h] * update_gate[b][h] + (1 - update_gate[b][h]) * hcand[b][h];
     
   }
@@ -62,7 +65,8 @@ __global__ void sligru_cuda_backward_kernel(
     const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> drop_mask,
     torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> dat,
     torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> dzt,
-    torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> grad_dh_prev) {
+    torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> grad_dh_prev,
+    const bool training) {
   //batch index
   const int b = blockIdx.y;
   // column index
@@ -71,9 +75,15 @@ __global__ void sligru_cuda_backward_kernel(
   if (h < dat.size(1)){
     auto dh = grad_out[b][h]  + dh_prev[b][h];
 
-    dat[b][h] = d_relu(at[b][h]) * drop_mask[b][h] * (1. - zt[b][h]) * dh;
+    auto tmp = (1. - zt[b][h]) * dh;
+    
+    dat[b][h] = d_relu(at[b][h]) * tmp;
 
-    dzt[b][h] = (ht[b][h] - hcand[b][h]) * dh * d_sigmoid(zt[b][h]);
+    if (training) {
+      dat[b][h] *= drop_mask[b][h]; 
+    }
+
+    dzt[b][h] = (ht[b][h] - hcand[b][h]) * tmp * zt[b][h];
     
     grad_dh_prev[b][h] = dh * zt[b][h];
   }
@@ -88,8 +98,9 @@ std::vector<torch::Tensor> sligru_cuda_cell_forward(
   const torch::Tensor& ht_pred, // [B, H]
   const torch::Tensor& u,       // [H * 2, H]
   const torch::Tensor& drop_mask,
-  int normalized_shape,
-  double eps
+  const int normalized_shape,
+  const double eps,
+  const bool training 
 ) {
 
 
@@ -135,7 +146,8 @@ std::vector<torch::Tensor> sligru_cuda_cell_forward(
         drop_mask.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>(),
         update_gate.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>(),
         hcand.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>(),
-        ht.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>());
+        ht.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>(),
+        training);
   }));
 
   return {ht, hcand, update_gate, at, recurrent_gate, mean, rstd};
@@ -155,7 +167,8 @@ std::vector<torch::Tensor> sligru_cuda_cell_backward(
   const torch::Tensor& recurrent_gate,
   const torch::Tensor& mean,
   const torch::Tensor& rstd,
-  const int normalized_shape
+  const int normalized_shape,
+  const bool training
 ) {
 
   const auto batch_size = dh_prev.size(0);
@@ -183,7 +196,8 @@ std::vector<torch::Tensor> sligru_cuda_cell_backward(
         drop_mask.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>(),
         dat.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>(),
         dzt.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>(),
-        grad_dh_prev.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>());
+        grad_dh_prev.packed_accessor32<scalar_t,2, torch::RestrictPtrTraits>(),
+        training);
   }));
 
     auto dwx = torch::cat({dat, dzt}, /*dim=*/1);

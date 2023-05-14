@@ -2,13 +2,13 @@ from torch.autograd import Function
 import torch
 import fast_sligru_cpp 
 import time 
-
+from fast_sligru.sligru import SLiGRUCell 
 
 relu = torch.nn.ReLU()
-batch_size, seq_length, hidden_size, input_size = 16, 2_000, 1024, 1024
+batch_size, seq_length, hidden_size, input_size = 16, 100, 512, 1024
 ln = torch.nn.LayerNorm(2 * hidden_size, elementwise_affine=False)
-double = False
-half = True
+double = False 
+half = False
 
 @torch.jit.script
 def ligru_cell(wx, u, ht, drop_mask):
@@ -36,7 +36,8 @@ def cuda_ligru_cell(normalized_shape, eps, drop_mask, wx, u, ht):
             u,
             drop_mask,
             normalized_shape,
-            eps
+            eps,
+            True
         )[0]
 
         hiddens.append(ht)
@@ -45,92 +46,6 @@ def cuda_ligru_cell(normalized_shape, eps, drop_mask, wx, u, ht):
     h = torch.stack(hiddens, dim=1)
     return h
 
-
-class SLiGRU(Function):
-
-    @staticmethod
-    def forward(ctx, wx, ht, u, drop_mask):
-
-        hiddens = []
-        candidate_gate = []
-        update_gate = []
-        save_at = []
-        save_mean = [] 
-        save_rstd = []
-        save_recurrent_gate = []
-        ctx.h_init = ht
-        eps = 1e-5
-        normalized_shape = u.size(0)
-
-        for t in range(wx.shape[1]):
-            ht, hcand, zt_sig, at, recurrent_gate, mean,rstd= fast_sligru_cpp.forward(
-                wx[:, t], 
-                ht, 
-                u, 
-                drop_mask,
-                normalized_shape,
-                eps
-            )
-
-            hiddens.append(ht)
-            candidate_gate.append(hcand)
-            update_gate.append(zt_sig)
-            save_at.append(at)
-            save_mean.append(mean)
-            save_rstd.append(rstd)
-            save_recurrent_gate.append(recurrent_gate)
-
-        ht = torch.stack(hiddens, dim=1)
-        ctx.save_for_backward(wx, ht, u, drop_mask)
-
-        ctx.candidate_gate = candidate_gate
-        ctx.update_gate = update_gate
-        ctx.save_at = save_at 
-        ctx.save_mean = save_mean
-        ctx.save_rstd = save_rstd
-        ctx.save_recurrent_gate = save_recurrent_gate
-        ctx.normalized_shape = normalized_shape
-        return ht
-
-    @staticmethod
-    def backward(ctx, grad_out):
-        wx, ht, u, drop_mask, = ctx.saved_tensors
-
-        candidate_gate = ctx.candidate_gate
-        update_gate = ctx.update_gate
-        save_at = ctx.save_at 
-        h_init = ctx.h_init 
-        mean = ctx.save_mean
-        rstd = ctx.save_rstd
-        recurrent_gate = ctx.save_recurrent_gate
-        normalized_shape = ctx.normalized_shape
-
-        dh_prev = torch.zeros_like(ht[:, 0])
-        du = torch.zeros_like(u)
-        dwx = torch.zeros_like(wx)
-
-        for t in reversed(range(wx.shape[1])):
-            ht_ = h_init if t - 1 < 0 else ht[:, t - 1]
-
-            dwx_, dh_prev, du = fast_sligru_cpp.backward(
-                grad_out[:, t],
-                dh_prev, 
-                update_gate[t],
-                save_at[t],
-                drop_mask,
-                ht_, 
-                candidate_gate[t],
-                u,
-                du,
-                recurrent_gate[t],
-                mean[t],
-                rstd[t],
-                normalized_shape
-            )
-
-            dwx[:, t] = dwx_
-
-        return dwx, None, du, None 
 
 
 def warmup(fct, *kargs, n_iters=2):
@@ -186,7 +101,7 @@ if __name__ == "__main__":
     wx = x @ w.T 
     
     if double:
-        torch.autograd.gradcheck(SLiGRU.apply, [wx, ht, u, drop_mask], atol=1e-5)
+        print(torch.autograd.gradcheck(SLiGRUCell.apply, [wx, ht, u, drop_mask]))
     
 
     out1 = ligru_cell(wx, u, ht, drop_mask)
@@ -197,5 +112,5 @@ if __name__ == "__main__":
     print(benchmark(ligru_cell, wx, u, ht, drop_mask, n_iters=20))
 
         
-    warmup(SLiGRU.apply, wx, ht, u, drop_mask, n_iters=10)
-    print(benchmark(SLiGRU.apply, wx, ht, u, drop_mask, n_iters=20))
+    warmup(SLiGRUCell.apply, wx, ht, u, drop_mask, n_iters=10)
+    print(benchmark(SLiGRUCell.apply, wx, ht, u, drop_mask, n_iters=20))

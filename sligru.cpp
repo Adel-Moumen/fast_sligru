@@ -12,8 +12,9 @@ std::vector<torch::Tensor> sligru_cuda_cell_forward(
   const torch::Tensor& ht_pred, // [B, H]
   const torch::Tensor& u,       // [H * 2, H]
   const torch::Tensor& drop_mask,
-  int normalized_shape,
-  double eps
+  const int normalized_shape,
+  const double eps,
+  const bool training
 ) ;
 
 std::vector<torch::Tensor> sligru_cuda_cell_backward(
@@ -29,7 +30,8 @@ std::vector<torch::Tensor> sligru_cuda_cell_backward(
   const torch::Tensor& recurrent_gate,
   const torch::Tensor& mean,
   const torch::Tensor& rstd,
-  const int normalized_shape
+  const int normalized_shape,
+  const bool training
 );
 
 std::vector<torch::Tensor> sligru_forward(
@@ -38,7 +40,8 @@ std::vector<torch::Tensor> sligru_forward(
   const torch::Tensor& u,       // [H * 2, H]
   const torch::Tensor& drop_mask, // [B, H]
   const int normalized_shape,
-  const double eps) {
+  const double eps,
+  const bool training) {
 
   return sligru_cuda_cell_forward(
     wx, 
@@ -46,7 +49,8 @@ std::vector<torch::Tensor> sligru_forward(
     u, 
     drop_mask, 
     normalized_shape, 
-    eps
+    eps,
+    training
   );
 }
 
@@ -63,7 +67,8 @@ std::vector<torch::Tensor> sligru_backward(
   const torch::Tensor& recurrent_gate,
   const torch::Tensor& mean,
   const torch::Tensor& rstd,
-  const int normalized_shape) {
+  const int normalized_shape,
+  const bool training) {
   CHECK_INPUT(grad_out);
   CHECK_INPUT(dh_prev);
   CHECK_INPUT(zt);
@@ -82,7 +87,7 @@ std::vector<torch::Tensor> sligru_backward(
     at, drop_mask, ht,
      hcand, u, du_prev,
      recurrent_gate, mean, rstd,
-     normalized_shape);
+     normalized_shape, training);
 }
 
 
