@@ -2,57 +2,21 @@ from torch.autograd import Function
 import torch
 import fast_sligru_cpp 
 import time 
-from fast_sligru.sligru import SLiGRUCell 
+from fast_sligru.sligru import SLiGRU
+import fast_sligru
+from fast_sligru.sligru_vanilla import LiGRU
 
 relu = torch.nn.ReLU()
-batch_size, seq_length, hidden_size, input_size = 16, 100, 512, 1024
+batch_size, seq_length, hidden_size, input_size, n_layers = 16, 1_000, 512, 1024, 4
 ln = torch.nn.LayerNorm(2 * hidden_size, elementwise_affine=False)
 double = False 
 half = False
 
-@torch.jit.script
-def ligru_cell(wx, u, ht, drop_mask):
-    hiddens = []
-
-    for t in range(wx.shape[1]):
-        gates = wx[:, t] + ln(ht @ u.T)
-        at, zt = gates.chunk(2, 1)
-        zt = torch.sigmoid(zt)
-        hcand = relu(at) * drop_mask
-        ht = zt * ht + (1 - zt) * hcand 
-        hiddens.append(ht)
-    
-    # Stacking hidden states
-    h = torch.stack(hiddens, dim=1)
-    return h
-
-def cuda_ligru_cell(normalized_shape, eps, drop_mask, wx, u, ht):
-    hiddens = []
-
-    for t in range(wx.shape[1]):
-        ht = fast_sligru_cpp.forward(
-            wx[:, t], 
-            ht, 
-            u,
-            drop_mask,
-            normalized_shape,
-            eps,
-            True
-        )[0]
-
-        hiddens.append(ht)
-    
-    # Stacking hidden states
-    h = torch.stack(hiddens, dim=1)
-    return h
-
-
-
 def warmup(fct, *kargs, n_iters=2):
     """Warmup function for JiT."""
     for _ in range(n_iters):
-        out = fct(*kargs)
-        out.sum().backward(retain_graph=True)
+        out, _ = fct(*kargs)
+        out.sum().backward()
 
 def benchmark(fct, *kargs, n_iters=5):
     """Evaluates an input function over n iterations."""
@@ -63,8 +27,8 @@ def benchmark(fct, *kargs, n_iters=5):
 
         torch.cuda.synchronize()
         time1 = time.time()
-        out = fct(*kargs)
-        out.sum().backward(retain_graph=True)
+        out, _ = fct(*kargs)
+        out.sum().backward()
         torch.cuda.synchronize()
         avg_time += time.time() - time1
 
@@ -72,7 +36,11 @@ def benchmark(fct, *kargs, n_iters=5):
 
 
 if __name__ == "__main__":
+    inp_tensor = torch.rand([batch_size, seq_length, input_size]).to("cuda")
+    net1 = SLiGRU(input_shape=inp_tensor.shape, hidden_size=hidden_size, num_layers=n_layers).to("cuda")
+    net2 = LiGRU(input_shape=inp_tensor.shape, hidden_size=hidden_size, num_layers=n_layers).to("cuda")
 
+    """
     if double:
         x = torch.randn(batch_size, seq_length, input_size, device="cuda", dtype=torch.float64)
         w = torch.randn(hidden_size * 2, input_size, requires_grad=True, dtype=torch.float64).to("cuda")
@@ -107,10 +75,12 @@ if __name__ == "__main__":
     out1 = ligru_cell(wx, u, ht, drop_mask)
     out2 = cuda_ligru_cell(normalized_shape, eps, drop_mask, wx, u, ht)
     assert torch.allclose(out1, out2, atol=10-5)
-    
-    warmup(ligru_cell, wx, u, ht, drop_mask, n_iters=10)
-    print(benchmark(ligru_cell, wx, u, ht, drop_mask, n_iters=20))
+    """
+    net1 = torch.jit.script(net1)
+    net2 = torch.jit.script(net2)
 
-        
-    warmup(SLiGRUCell.apply, wx, ht, u, drop_mask, n_iters=10)
-    print(benchmark(SLiGRUCell.apply, wx, ht, u, drop_mask, n_iters=20))
+    warmup(net1, inp_tensor, n_iters=3)
+    print(benchmark(net1, inp_tensor, n_iters=10))
+
+    warmup(net2, inp_tensor, n_iters=3)
+    print(benchmark(net2, inp_tensor, n_iters=10))

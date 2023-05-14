@@ -5,7 +5,7 @@
 
 
 namespace {
-  // tanh(zt * 0.5) * 0.5 + 0.5;
+
 template <typename scalar_t>
 __device__ __forceinline__ scalar_t sigmoid(scalar_t z) {
   return 1.0 / (1.0 + exp(-z));
@@ -25,8 +25,6 @@ template <typename scalar_t>
 __device__ __forceinline__ scalar_t d_relu(scalar_t z) {
   return (z > 0.0) ? 1.0 : 0.0;
 }
-
-
 
 
 template <typename scalar_t>
