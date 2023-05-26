@@ -38,7 +38,7 @@ hidden_size, num_layer, dropout = 512, 4, 0.1
 device = "cuda" # it works with CPU too
 
 inp_tensor = torch.randn((batch, time, feats), requires_grad=False).to(device)
-net = fast_sligru.SLiGRU( # or LiGRU
+net = fast_sligru.SLiGRU( 
     input_shape=inp_tensor.shape,
     hidden_size=hidden_size,
     num_layers=num_layer,
