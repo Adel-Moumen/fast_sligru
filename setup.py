@@ -7,12 +7,22 @@ setup(
         CppExtension(
             'fast_sligru_cpp',
             ['fast_sligru/csrc/sligru.cpp', 'fast_sligru/csrc/sligru_kernel.cu']
-            # extra_compile_args=['-use_fast_math']
         ),
     ],
     cmdclass={
         'build_ext': BuildExtension
     }, 
     version="0.1.0", 
-    packages=find_packages()
+    author="Adel Moumen",
+    author_email="adel.moumen@univ-avignon.fr",
+    description="A fast CUDA implementation of the SLiGRU model.",
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: Apache Software License",
+    ],
+    packages=find_packages(),
+    install_requires=[
+        "torch",
+    ],
+    python_requires=">=3.8",
 )

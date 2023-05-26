@@ -1,30 +1,31 @@
+""" This module implements a (SLOW) Stabilised Light GRU (Li-GRU) cell.
+
+Author:
+    * Adel Moumen 2023
+"""
 import torch.nn as nn 
 import torch
 from torch import Tensor
 from typing import Optional
 
 
-class LiGRU(torch.nn.Module):
-    """ This function implements a Light GRU (Li-GRU).
+class SLiGRU(torch.nn.Module):
+    """ This class implements a Stabilised Light GRU (Li-GRU).
 
-    Li-GRU is single-gate GRU model based on batch-norm + relu
-    activations + recurrent dropout. For more info see:
+    SLi-GRU is single-gate GRU model based on batch-norm + relu
+    activations + layer-norm on the recurrent connections + recurrent dropout.
 
-    "M. Ravanelli, P. Brakel, M. Omologo, Y. Bengio,
-    Light Gated Recurrent Units for Speech Recognition,
-    in IEEE Transactions on Emerging Topics in Computational Intelligence,
-    2018" (https://arxiv.org/abs/1803.10225)
+    The SLi-GRU differs from the vanilla Li-GRU on the recurrent weights. Indeed, the Li-GRU
+    suffers from an exploding gradient problem on the recurrent weights, and cannot be trained on medium to large ASR dataset.
+    To solve this problem, we use a layer-norm on the recurrent weights that stabilises the training of the model and allows one
+    to train it on large ASR datasets without any problem.
 
-    If you face instabilities during training, use instead the Stabilised Li-GRU (SLi-GRU).
-    See:
-        - speechbrain.nnet.RNN.SLiGRU
+    This model beat traditional LSTM/GRU models on the CommonVoice/LibriSpeech datasets (WER and efficiency).
 
-    To improve the speed of the model, it is recommended to use the torch just-in-time compiler (jit)
-    right before using it or you can use the custom implementation (CUDA+PyTorch) that is available
-    at https://github.com/Adel-Moumen/fast_ligru.
-
-    You can compile it with:
-    compiled_model = torch.jit.script(model)
+    For more info see:
+    "Moumen, A., & Parcollet, T. (2023, June). Stabilising and accelerating light gated recurrent units for automatic speech recognition.
+    In ICASSP 2023-2023 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) (pp. 1-5). IEEE."
+    (https://arxiv.org/abs/2302.10144)
 
     It accepts in input tensors formatted as (batch, time, fea).
     In the case of 4d inputs like (batch, time, fea, channel) the tensor is
@@ -229,7 +230,7 @@ class LiGRU_Layer(torch.nn.Module):
         self.u = nn.Linear(self.hidden_size, 2 * self.hidden_size, bias=False)
 
         self.layer_norm = nn.LayerNorm(
-            2 * self.hidden_size
+            2 * self.hidden_size, elementwise_affine=False
         )
 
         if self.bidirectional:

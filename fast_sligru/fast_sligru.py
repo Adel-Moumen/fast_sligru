@@ -1,3 +1,8 @@
+""" This module implements a CUDA Stabilised Light GRU (Li-GRU) cell.
+
+Author:
+    * Adel Moumen 2023
+"""
 from torch.autograd import Function
 import torch.nn as nn 
 import torch
@@ -6,9 +11,33 @@ from torch import Tensor
 from typing import Optional
 
 class SLiGRUCell(Function):
+    """ This class implements a CUDA Stabilised Light GRU (Li-GRU) cell.
 
+    SLi-GRU is single-gate GRU variant that uses a single gate to control the
+    flow of information. 
+
+    For more info see:
+    "Moumen, A., & Parcollet, T. (2023, June). Stabilising and accelerating light gated recurrent units for automatic speech recognition.
+    In ICASSP 2023-2023 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) (pp. 1-5). IEEE."
+    (https://arxiv.org/abs/2302.10144)
+    """
     @staticmethod
     def forward(ctx, wx, ht, u, drop_mask, training=False):
+        """ This function implements the forward pass of the SLi-GRU cell.
+
+        Arguments
+        ---------
+        wx : torch.Tensor
+            The input tensor.
+        ht : torch.Tensor
+            The hidden state tensor.
+        u : torch.Tensor
+            The recurrent weight tensor.
+        drop_mask : torch.Tensor
+            The dropout mask tensor.
+        training : bool
+            Whether the model is in training mode or not.
+        """
 
         hiddens = []
         candidate_gate = []
@@ -56,6 +85,13 @@ class SLiGRUCell(Function):
 
     @staticmethod
     def backward(ctx, grad_out):
+        """ This function implements the backward pass of the SLi-GRU cell.
+
+        Arguments
+        ---------
+        grad_out : torch.Tensor
+            The gradient of the output.
+        """
         wx, ht, u, drop_mask, = ctx.saved_tensors
 
         dh_prev = torch.zeros_like(ht[:, 0])
@@ -100,14 +136,14 @@ class SLiGRU(torch.nn.Module):
     This model beat traditional LSTM/GRU models on the CommonVoice/LibriSpeech datasets (WER and efficiency).
 
     For more info see:
-    "Moumen, A., & Parcollet, T. (2023, June). 
-    Stabilising and accelerating light gated recurrent units for automatic speech recognition. 
+    "Moumen, A., & Parcollet, T. (2023, June). Stabilising and accelerating light gated recurrent units for automatic speech recognition.
     In ICASSP 2023-2023 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) (pp. 1-5). IEEE."
     (https://arxiv.org/abs/2302.10144)
 
     It accepts in input tensors formatted as (batch, time, fea).
     In the case of 4d inputs like (batch, time, fea, channel) the tensor is
     flattened as (batch, time, fea*channel).
+
 
     Arguments
     ---------
@@ -116,12 +152,12 @@ class SLiGRU(torch.nn.Module):
         values (i.e, time and frequency kernel sizes respectively).
     input_shape : tuple
         The shape of an example input.
-    nonlinearity : str
-        Type of nonlinearity (tanh, relu).
     ff_normalization : str
         Type of feedforward normalization for the ligru model (batchnorm, layernorm).
         Every string different from batchnorm and layernorm will result
         in no normalization.
+    recurrent_elementwise_affine : bool
+        A boolean value that when set to True will enable the learnable affine parameters.
     num_layers : int
         Number of layers to employ in the RNN architecture.
     bias : bool
@@ -148,7 +184,6 @@ class SLiGRU(torch.nn.Module):
         self,
         hidden_size,
         input_shape,
-        nonlinearity="relu",
         ff_normalization="batchnorm",
         num_layers=1,
         bias=True,
@@ -158,7 +193,6 @@ class SLiGRU(torch.nn.Module):
     ):
         super().__init__()
         self.hidden_size = hidden_size
-        self.nonlinearity = nonlinearity
         self.num_layers = num_layers
         self.ff_normalization = ff_normalization
         self.bias = bias
@@ -189,7 +223,6 @@ class SLiGRU(torch.nn.Module):
                 self.num_layers,
                 self.batch_size,
                 dropout=self.dropout,
-                nonlinearity=self.nonlinearity,
                 ff_normalization=self.ff_normalization,
                 bias=self.bias,
                 bidirectional=self.bidirectional,
@@ -278,8 +311,6 @@ class SLiGRU_Layer(torch.nn.Module):
         Note that this only applies to the feedforward affine transform.
         SLi-GRU (unlike Li-GRU) unconditionally applies layer normalization in
         the recurrent layers, which is unaffected by this parameter.
-    recurrent_elementwise_affine : bool
-        A boolean value that when set to True, this module has learnable per-element affine parameters initialized to ones (for weights) and zeros (for biases).
     bias: bool
         If True, the additive bias b is adopted.
     bidirectional : bool
@@ -294,7 +325,6 @@ class SLiGRU_Layer(torch.nn.Module):
         num_layers,
         batch_size,
         dropout=0.0,
-        nonlinearity="relu",
         ff_normalization="batchnorm",
         bias=True,
         bidirectional=False,
@@ -313,7 +343,7 @@ class SLiGRU_Layer(torch.nn.Module):
         self.u = nn.Linear(self.hidden_size, 2 * self.hidden_size, bias=False)
 
         self.layer_norm = nn.LayerNorm(
-            2 * self.hidden_size
+            2 * self.hidden_size, elementwise_affine=False
         )
 
         if self.bidirectional:
@@ -346,15 +376,7 @@ class SLiGRU_Layer(torch.nn.Module):
         # Preloading dropout masks (gives some speed improvement)
         self._init_drop()
 
-        # Setting the activation function
-        if nonlinearity == "tanh":
-            self.act = torch.nn.Tanh()
-        elif nonlinearity == "sin":
-            self.act = torch.sin
-        elif nonlinearity == "leaky_relu":
-            self.act = torch.nn.LeakyReLU()
-        else:
-            self.act = torch.nn.ReLU()
+        self.act = torch.nn.ReLU()
 
     def forward(self, x, hx: Optional[Tensor] = None):
         # type: (Tensor, Optional[Tensor]) -> Tensor # noqa F821
@@ -426,8 +448,9 @@ class SLiGRU_Layer(torch.nn.Module):
             Linearly transformed input.
         ht : torch.Tensor
             Hidden state.
+        drop_mask : torch.Tensor
+            Dropout mask.
         """
-
         if w.is_cuda:
             if not self.training:
                 # [H] -> [B, H] it makes the compiler happy
