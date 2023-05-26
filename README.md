@@ -6,17 +6,26 @@ For questions or feedback about `fast_sligru`, please open an issue on GitHub or
 
 ## GPU performance
 Benchmarked on a single Tesla V100s (32Gb) (see: benchmark/benchmark.py). The improvements are more pronounced when 
-running on longer sequences.
+running on longer sequences. Each SLi-GRU is composed of 4 layers of 512 units. The input size is 1024. The batch size is 16.
 
 **Forward pass:**
-| *Batch*=16, *Input size*=1024                 | fast SLi-GRU  | slow SLi-GRU (PyTorch) |
+| *Batch*=16                 | fast SLi-GRU (CUDA+PyTorch) | slow SLi-GRU (PyTorch) |
 |-----------------------------------|-------|---------|
-| *L*=100                           | 30.6 ms| 39.3 ms   |
-| *L*=500                           | 118.0 ms| 145.5 ms   |
-| *L*=1000                          | 185.3 ms| 270.0 ms   |
-| *L*=2000                          | 339.9 ms| 526.3 ms   |
-| *L*=3000                          | 486.1 ms| 800.5 ms   |
+| *L*=100                           | 0.05 s| 0.11 s   |
+| *L*=500                           | 0.25 s| 0.55 s   |
+| *L*=1000                          | 0.50 s| 1.11 s   |
+| *L*=2000                          | 1.02 s| 2.26 s   |
+| *L*=3000                          | 1.55 s| 3.39 s   |
 
+
+**Backward pass:**
+| *Batch*=16                 | fast SLi-GRU (CUDA+PyTorch) | slow SLi-GRU (PyTorch) |
+|-----------------------------------|-------|---------|
+| *L*=100                           | 0.15 s| 0.25 s   |
+| *L*=500                           | 0.63 s| 1.29 s   |
+| *L*=1000                          | 1.27 s| 3.68 s   |
+| *L*=2000                          | 2.65 s| 11.87 s   |
+| *L*=3000                          | 3.84 s| 24.39 s   |
 
 ## How to use it 
 ```python
