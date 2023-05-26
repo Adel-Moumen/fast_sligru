@@ -37,8 +37,11 @@ def benchmark(fct, *kargs, n_iters=5):
 
 if __name__ == "__main__":
     inp_tensor = torch.rand([batch_size, seq_length, input_size]).to("cuda")
+    torch.manual_seed(42)
     net1 = SLiGRU(input_shape=inp_tensor.shape, hidden_size=hidden_size, num_layers=n_layers).to("cuda")
+    torch.manual_seed(42)
     net2 = LiGRU(input_shape=inp_tensor.shape, hidden_size=hidden_size, num_layers=n_layers).to("cuda")
+
 
     """
     if double:

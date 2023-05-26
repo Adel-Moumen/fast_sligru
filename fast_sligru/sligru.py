@@ -429,6 +429,9 @@ class SLiGRU_Layer(torch.nn.Module):
         """
 
         if w.is_cuda:
+            if not self.training:
+                # [H] -> [B, H] it makes the compiler happy
+                drop_mask = drop_mask.repeat(w.shape[0], 1)
             h = SLiGRUCell.apply(w, ht, self.u.weight, drop_mask, self.training)
         else:
             h = self._sligru_cell_cpu(w, ht, drop_mask)
@@ -469,8 +472,9 @@ class SLiGRU_Layer(torch.nn.Module):
             self.drop_mask_cnt = self.drop_mask_cnt + self.batch_size
 
         else:
-            self.drop_mask_te = self.drop_mask_te.to(w.device)
-            drop_mask = self.drop_mask_te
+            drop_mask = torch.ones(
+                self.hidden_size, device=w.device
+            )
 
         return drop_mask
 

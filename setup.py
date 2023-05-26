@@ -6,7 +6,7 @@ setup(
     ext_modules=[
         CppExtension(
             'fast_sligru_cpp',
-            ['sligru.cpp', 'sligru_kernel.cu']
+            ['fast_sligru/csrc/sligru.cpp', 'fast_sligru/csrc/sligru_kernel.cu']
             # extra_compile_args=['-use_fast_math']
         ),
     ],
