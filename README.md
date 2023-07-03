@@ -62,14 +62,15 @@ pip install -e .
 ## Citing this work
 To cite this work, please use the following BibTeX entry:
 ```
-@inproceedings{moumen2023stabilising,
-  title={Stabilising and accelerating light gated recurrent units for automatic speech recognition},
+@INPROCEEDINGS{10095763,
   author={Moumen, Adel and Parcollet, Titouan},
-  booktitle={ICASSP 2023-2023 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)},
-  pages={1--5},
+  booktitle={ICASSP 2023 - 2023 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)}, 
+  title={Stabilising and Accelerating Light Gated Recurrent Units for Automatic Speech Recognition}, 
   year={2023},
-  organization={IEEE}
-}
+  volume={},
+  number={},
+  pages={1-5},
+  doi={10.1109/ICASSP49357.2023.10095763}}
 ```
 
 ## License
