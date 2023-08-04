@@ -72,7 +72,8 @@ To cite this work, please use the following BibTeX entry:
   volume={},
   number={},
   pages={1-5},
-  doi={10.1109/ICASSP49357.2023.10095763}}
+  doi={10.1109/ICASSP49357.2023.10095763}
+}
 ```
 
 ## License
