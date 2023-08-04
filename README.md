@@ -54,7 +54,9 @@ out_tensor.sum().backward()
 
 ### How to install 
 To build the package:
-```
+```bash
+git clone https://github.com/Adel-Moumen/fast_sligru.git
+cd fast_sligru/
 pip install -r requirements.txt
 pip install -e .
 ```
