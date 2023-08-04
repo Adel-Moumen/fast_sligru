@@ -117,7 +117,9 @@ class SLiGRUCell(Function):
                 ctx.normalized_shape,
                 ctx.training
             )
-
+            # CLIP if superior to 1
+            # dh_prev = torch.clamp(dh_prev, max=1)
+        
             dwx[:, t] = dwx_
 
         return dwx, None, du, None, None
