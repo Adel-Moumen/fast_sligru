@@ -89,12 +89,11 @@ class LiGRUCell(Function):
 
         for t in reversed(range(wx.shape[1])):
             ht_ = ctx.h_init  if t - 1 < 0 else ht[:, t - 1]
-
             dwx_, dh_prev, du = fast_sligru_cpp.ligru_backward(
                 grad_out[:, t],
                 dh_prev, 
                 ctx.update_gate[t],
-                ctx.save_at [t],
+                ctx.save_at[t],
                 drop_mask,
                 ht_, 
                 ctx.candidate_gate[t],

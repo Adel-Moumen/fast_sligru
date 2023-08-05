@@ -182,8 +182,7 @@ std::vector<torch::Tensor> ligru_cuda_cell_backward(
   }));
 
     auto dwx = torch::cat({dat, dzt}, /*dim=*/1);
-
-    auto grad_grad_dh_prev = grad_dh_prev.mm(u);
-    auto du = du_prev.mm(ht);
+    auto grad_grad_dh_prev = at::addmm(grad_dh_prev, dwx, u); 
+    auto du = at::addmm(du_prev, dwx.t(), ht);
     return {dwx, grad_grad_dh_prev, du};
 }

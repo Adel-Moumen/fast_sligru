@@ -2,7 +2,7 @@
 """
 import torch
 import time 
-from fast_sligru import fast_sligru, slow_sligru
+from fast_sligru import fast_ligru, slow_sligru
 
 def warmup(fct, *kargs, n_iters=2):
     """Warmup function."""
@@ -36,17 +36,17 @@ half = False
 
 if __name__ == "__main__":
 
+    torch.manual_seed(42)
+    net1 = fast_ligru.LiGRU(input_shape=(batch_size, 1, input_size), hidden_size=hidden_size, num_layers=n_layers).to("cuda")
+        
+    torch.manual_seed(42)
+    net2 = slow_sligru.SLiGRU(input_shape=(batch_size, 1, input_size), hidden_size=hidden_size, num_layers=n_layers).to("cuda")
+
     for seq_length in [100, 500, 1000, 2000, 3000]:
         print("===========================================")
         print(f"seq_length: {seq_length}")
 
         inp_tensor = torch.rand([batch_size, seq_length, input_size]).to("cuda")
-        
-        torch.manual_seed(42)
-        net1 = fast_sligru.SLiGRU(input_shape=inp_tensor.shape, hidden_size=hidden_size, num_layers=n_layers).to("cuda")
-        
-        torch.manual_seed(42)
-        net2 = slow_sligru.SLiGRU(input_shape=inp_tensor.shape, hidden_size=hidden_size, num_layers=n_layers).to("cuda")
 
         if double:
             inp_tensor = inp_tensor.double()
@@ -62,7 +62,7 @@ if __name__ == "__main__":
             net2 = net2.float()
 
         warmup(net1, inp_tensor, n_iters=3)
-        print("fast_sligru = ", benchmark(net1, inp_tensor, n_iters=10))
+        print("fast_ligru = ", benchmark(net1, inp_tensor, n_iters=10))
 
         warmup(net2, inp_tensor, n_iters=3)
         print("slow_sligru = ", benchmark(net2, inp_tensor, n_iters=10))
