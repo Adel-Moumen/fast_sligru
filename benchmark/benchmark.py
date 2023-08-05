@@ -37,7 +37,7 @@ half = False
 if __name__ == "__main__":
 
     torch.manual_seed(42)
-    net1 = fast_ligru.LiGRU(input_shape=(batch_size, 1, input_size), hidden_size=hidden_size, num_layers=n_layers).to("cuda")
+    net1 = fast_ligru.LiGRU(input_shape=(batch_size, 1, input_size), hidden_size=hidden_size, num_layers=n_layers, bidirectional=True).to("cuda")
         
     torch.manual_seed(42)
     net2 = slow_sligru.SLiGRU(input_shape=(batch_size, 1, input_size), hidden_size=hidden_size, num_layers=n_layers).to("cuda")

@@ -410,7 +410,7 @@ class SLiGRU_Layer(torch.nn.Module):
         hiddens = []
 
         for t in range(w.shape[1]):
-            gates = w[:, t] + self.u(w)
+            gates = w[:, t] + self.u(ht)
             at, zt = gates.chunk(2, 1)
             zt = torch.sigmoid(zt)
             hcand = self.act(at) * drop_mask
