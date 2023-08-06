@@ -1,6 +1,8 @@
 #include <torch/extension.h>
 #include <vector>
 
+// TODO: remove this file as it is unused
+
 using namespace torch::indexing;
 
 #define CHECK_CUDA(x) AT_ASSERT(x.is_cuda(), #x " must be a CUDA tensor")

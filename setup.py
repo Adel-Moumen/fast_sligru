@@ -8,7 +8,7 @@ setup(
             'fast_sligru_cpp',
             [
                 'fast_sligru/csrc/sligru_kernel.cu',
-                'fast_sligru/csrc/ligru.cpp', 
+                'fast_sligru/csrc/rnns.cpp', 
                 'fast_sligru/csrc/ligru_kernel.cu',
             ]
         ),
