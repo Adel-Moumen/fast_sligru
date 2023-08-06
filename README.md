@@ -27,7 +27,19 @@ running on longer sequences. Each SLi-GRU is composed of 4 layers of 512 units. 
 | *L*=2000                          | 2.65 s| 11.87 s   |
 | *L*=3000                          | 3.84 s| 24.39 s   |
 
-## How to use it 
+## How to use it with SpeechBrain
+You just have to change the name of the RNN class in your yaml file.
+See ASR seq2seq LibriSpeech: [SpeechBrain](
+  https://github.com/speechbrain/speechbrain/blob/develop/recipes/LibriSpeech/ASR/seq2seq/hparams/train_BPE_1000.yaml#L89
+)
+```yaml
+# in your yaml file
+rnn_class: !name:fast_sligru.fast_ligru.LiGRU
+# or if you want to use the SLi-GRU
+rnn_class: !name:fast_sligru.fast_sligru.SLiGRU
+```
+
+## How to use it with PyTorch
 ```python
 import torch
 from fast_sligru import fast_sligru
