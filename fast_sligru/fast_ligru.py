@@ -240,6 +240,8 @@ class LiGRU(torch.nn.Module):
         # run ligru
         output, hh = self._forward_sligru(x, hx=hx)
 
+        self.hh_max = hh.max()
+        
         return output, hh
 
     def _forward_sligru(self, x, hx: Optional[Tensor]):

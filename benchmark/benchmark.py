@@ -33,20 +33,21 @@ def benchmark(fct, *kargs, n_iters=5):
 batch_size, hidden_size, input_size, n_layers = 16, 512, 1024, 4
 double = False 
 half = False
+device = "cuda"
 
 if __name__ == "__main__":
 
     torch.manual_seed(42)
-    net1 = fast_ligru.LiGRU(input_shape=(batch_size, 1, input_size), hidden_size=hidden_size, num_layers=n_layers, bidirectional=True).to("cuda")
+    net1 = fast_ligru.LiGRU(input_shape=(batch_size, 1, input_size), hidden_size=hidden_size, num_layers=n_layers, bidirectional=True).to(device)
         
     torch.manual_seed(42)
-    net2 = slow_sligru.SLiGRU(input_shape=(batch_size, 1, input_size), hidden_size=hidden_size, num_layers=n_layers).to("cuda")
+    net2 = slow_sligru.SLiGRU(input_shape=(batch_size, 1, input_size), hidden_size=hidden_size, num_layers=n_layers).to(device)
 
     for seq_length in [100, 500, 1000, 2000, 3000]:
         print("===========================================")
         print(f"seq_length: {seq_length}")
 
-        inp_tensor = torch.rand([batch_size, seq_length, input_size]).to("cuda")
+        inp_tensor = torch.rand([batch_size, seq_length, input_size]).to(device)
 
         if double:
             inp_tensor = inp_tensor.double()
