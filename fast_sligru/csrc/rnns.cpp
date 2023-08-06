@@ -80,9 +80,10 @@ std::vector<torch::Tensor> ligru_backward(
 std::vector<torch::Tensor> lstm_cuda_cell_forward(
   const torch::Tensor& wx,      // [B, H * 2]
   const torch::Tensor& ht_pred, // [B, H]
+  const torch::Tensor& ct_pred, // [B, H]
   const torch::Tensor& u,       // [H * 2, H]
   const torch::Tensor& drop_mask,
-  const bool training
+  const bool training 
 ) ;
 
 std::vector<torch::Tensor> lstm_cuda_cell_backward(
@@ -102,13 +103,16 @@ std::vector<torch::Tensor> lstm_cuda_cell_backward(
 std::vector<torch::Tensor> lstm_forward(
   const torch::Tensor& wx,      // [B, H * 2]
   const torch::Tensor& ht_pred, // [B, H]
+  const torch::Tensor& ct_pred, // [B, H]
   const torch::Tensor& u,       // [H * 2, H]
-  const torch::Tensor& drop_mask, // [B, H]
-  const bool training) {
+  const torch::Tensor& drop_mask,
+  const bool training 
+) {
 
-  return ligru_cuda_cell_forward(
+  return lstm_cuda_cell_forward(
     wx, 
     ht_pred, 
+    ct_pred,
     u, 
     drop_mask, 
     training

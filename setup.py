@@ -10,6 +10,7 @@ setup(
                 'fast_sligru/csrc/sligru_kernel.cu',
                 'fast_sligru/csrc/rnns.cpp', 
                 'fast_sligru/csrc/ligru_kernel.cu',
+                'fast_sligru/csrc/lstm_kernel.cu',
             ]
         ),
     ],
