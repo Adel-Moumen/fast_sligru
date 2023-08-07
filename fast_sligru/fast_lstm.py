@@ -40,7 +40,8 @@ class LSTMCell(Function):
         """
 
         hiddens = []
-            
+        cell_state = []
+
         if training:
             save_recurrent_gate = []
             save_input_gate = []
@@ -52,8 +53,10 @@ class LSTMCell(Function):
         ctx.h_init = ht
         ctx.training = training
 
+        print("here")
+
         for t in range(wx.shape[1]):
-            ht, ct, input_gate, cell_gate, forget_gate, output_gate, recurrent_gate, = fast_sligru_cpp.ligru_forward(
+            ht, ct, input_gate, cell_gate, forget_gate, output_gate, recurrent_gate, = fast_sligru_cpp.lstm_forward(
                 wx[:, t], 
                 ht, 
                 ct,
@@ -63,6 +66,8 @@ class LSTMCell(Function):
             )
 
             hiddens.append(ht)
+            cell_state.append(ct)
+
             # TODO: optimise this. If this is not training time then we can discard this and save memory
             if training:
                 save_recurrent_gate.append(recurrent_gate)
@@ -72,29 +77,31 @@ class LSTMCell(Function):
                 save_cell_gate.append(cell_gate)
 
         ht = torch.stack(hiddens, dim=1)
+        ct = torch.stack(cell_state, dim=1)
 
         if training:
-            ctx.save_for_backward(wx, ht, u, drop_mask)
+            ctx.save_for_backward(wx, ht, ct, u, drop_mask)
             ctx.save_input_gate = save_input_gate
             ctx.save_forget_gate = save_forget_gate
             ctx.save_output_gate = save_output_gate
             ctx.save_cell_gate = save_cell_gate
             ctx.save_recurrent_gate = save_recurrent_gate
-            
+
         return ht, ct
 
     @staticmethod
-    def backward(ctx, grad_out):
-        """ This function implements the backward pass of the SLi-GRU cell.
+    def backward(ctx, grad_out_h, grad_out_c):
+        """ This function implements the backward pass of the LSTM cell.
 
         Arguments
         ---------
         grad_out : torch.Tensor
             The gradient of the output.
         """
-        wx, ht, u, drop_mask, = ctx.saved_tensors
+        wx, ht, ct, u, drop_mask, = ctx.saved_tensors
 
         dh_prev = torch.zeros_like(ht[:, 0])
+        dc_prev = torch.zeros_like(ct[:, 0])
         du = torch.zeros_like(u)
         dwx = torch.zeros_like(wx)
 
@@ -119,6 +126,7 @@ class LSTMCell(Function):
             dwx[:, t] = dwx_
 
         return dwx, None, du, None, None
+    
 class LSTM(torch.nn.Module):
     def __init__(
         self,

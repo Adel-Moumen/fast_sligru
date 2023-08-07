@@ -40,13 +40,15 @@ class LiGRUCell(Function):
         """
 
         hiddens = []
-        candidate_gate = []
-        update_gate = []
-        save_at = []
-        save_recurrent_gate = []
-        
-        ctx.h_init = ht
-        ctx.training = training
+
+        if training:
+            candidate_gate = []
+            update_gate = []
+            save_at = []
+            save_recurrent_gate = []
+            
+            ctx.h_init = ht
+            ctx.training = training
 
         for t in range(wx.shape[1]):
             ht, hcand, zt_sig, at, recurrent_gate, = fast_sligru_cpp.ligru_forward(
@@ -58,18 +60,21 @@ class LiGRUCell(Function):
             )
 
             hiddens.append(ht)
-            candidate_gate.append(hcand)
-            update_gate.append(zt_sig)
-            save_at.append(at)
-            save_recurrent_gate.append(recurrent_gate)
+            if training:
+                candidate_gate.append(hcand)
+                update_gate.append(zt_sig)
+                save_at.append(at)
+                save_recurrent_gate.append(recurrent_gate)
 
         ht = torch.stack(hiddens, dim=1)
-        ctx.save_for_backward(wx, ht, u, drop_mask)
 
-        ctx.candidate_gate = candidate_gate
-        ctx.update_gate = update_gate
-        ctx.save_at = save_at 
-        ctx.save_recurrent_gate = save_recurrent_gate
+        if training:
+            ctx.save_for_backward(wx, ht, u, drop_mask)
+
+            ctx.candidate_gate = candidate_gate
+            ctx.update_gate = update_gate
+            ctx.save_at = save_at 
+            ctx.save_recurrent_gate = save_recurrent_gate
         return ht
 
     @staticmethod

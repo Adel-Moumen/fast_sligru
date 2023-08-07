@@ -40,15 +40,18 @@ class SLiGRUCell(Function):
         """
 
         hiddens = []
-        candidate_gate = []
-        update_gate = []
-        save_at = []
-        save_mean = [] 
-        save_rstd = []
-        save_recurrent_gate = []
-        
-        ctx.h_init = ht
-        ctx.training = training
+
+        if training:
+            candidate_gate = []
+            update_gate = []
+            save_at = []
+            save_mean = [] 
+            save_rstd = []
+            save_recurrent_gate = []
+            
+            ctx.h_init = ht
+            ctx.training = training
+
         eps = 1e-5
         normalized_shape = u.size(0)
 
@@ -64,23 +67,28 @@ class SLiGRUCell(Function):
             )
 
             hiddens.append(ht)
-            candidate_gate.append(hcand)
-            update_gate.append(zt_sig)
-            save_at.append(at)
-            save_mean.append(mean)
-            save_rstd.append(rstd)
-            save_recurrent_gate.append(recurrent_gate)
+
+            if training:
+                candidate_gate.append(hcand)
+                update_gate.append(zt_sig)
+                save_at.append(at)
+                save_mean.append(mean)
+                save_rstd.append(rstd)
+                save_recurrent_gate.append(recurrent_gate)
 
         ht = torch.stack(hiddens, dim=1)
-        ctx.save_for_backward(wx, ht, u, drop_mask)
 
-        ctx.candidate_gate = candidate_gate
-        ctx.update_gate = update_gate
-        ctx.save_at = save_at 
-        ctx.save_mean = save_mean
-        ctx.save_rstd = save_rstd
-        ctx.save_recurrent_gate = save_recurrent_gate
-        ctx.normalized_shape = normalized_shape
+        if training:
+            ctx.save_for_backward(wx, ht, u, drop_mask)
+
+            ctx.candidate_gate = candidate_gate
+            ctx.update_gate = update_gate
+            ctx.save_at = save_at 
+            ctx.save_mean = save_mean
+            ctx.save_rstd = save_rstd
+            ctx.save_recurrent_gate = save_recurrent_gate
+            ctx.normalized_shape = normalized_shape
+            
         return ht
 
     @staticmethod

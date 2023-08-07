@@ -118,7 +118,7 @@ std::vector<torch::Tensor> lstm_cuda_cell_forward(
   auto recurrent_gate = ht_pred.mm(u.t());
 
   auto gates = wx + recurrent_gate;
-  auto chunked_gates = gates.chunk(4, 1);
+  auto chunked_gates = gates.chunk(4, -1);
 
   auto it = chunked_gates[0];
   auto ft = chunked_gates[1];
