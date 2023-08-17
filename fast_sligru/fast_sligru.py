@@ -466,8 +466,7 @@ class SLiGRU_Layer(torch.nn.Module):
         else:
             h = self._sligru_cell_cpu(w, ht, drop_mask)
 
-        if self.training:
-            self.compute_local_loss(h.max())
+        self.compute_local_loss(h.max())
 
         return h
 

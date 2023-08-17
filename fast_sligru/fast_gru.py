@@ -211,8 +211,7 @@ class GRU_Layer(torch.nn.Module):
 
         output, h = self.gru(x, ht)
 
-        if self.training:
-            self.compute_local_loss(output.max())
+        self.compute_local_loss(output.max())
 
         return output
     

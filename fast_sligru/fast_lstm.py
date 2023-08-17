@@ -211,8 +211,7 @@ class LSTM_Layer(torch.nn.Module):
 
         output, h = self.LSTM(x, ht)
 
-        if self.training:
-            self.compute_local_loss(output.max())
+        self.compute_local_loss(output.max())
 
         return output
     
