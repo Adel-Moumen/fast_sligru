@@ -5,7 +5,7 @@ import torch.optim as optim
 import numpy as np
 import random
 
-from fast_sligru import fast_sligru, fast_ligru, slow_gru, slow_lstm
+from fast_sligru import fast_sligru, fast_ligru, slow_gru, slow_lstm, fast_gru
 
 class Model(nn.Module):
     def __init__(self, rnn, hidden_size):
@@ -48,32 +48,37 @@ def generate_batch(seq_length, batch_size):
     return x, y
 
 if __name__ == "__main__":
-    batch_size = 128
+    batch_size = 64
     seq_length = 2_000
-    hidden_size = 256
+    hidden_size = 1024
     num_layer = 1
-    dropout = 0.1
+    bidirectional = True
+    dropout = 0.0
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype = torch.float32
     learning_rate = 0.001 # 0.001
     epochs = 2_000  
-    cuda_graph = True
+    cuda_graph = False
     jit_compile = False
+    print_recurrent_weights = False
 
-    rnn = slow_lstm.LSTM( 
+    rnn = fast_gru.GRU( 
         input_shape=(batch_size, seq_length, 2),
         hidden_size=hidden_size,
         num_layers=num_layer,
-        dropout=dropout,
-        bidirectional=False,
-        nonlinearity="tanh",
+        #dropout=dropout,
+        bidirectional=bidirectional,
+        #nonlinearity="tanh",
     )
 
     if jit_compile:
         rnn = torch.jit.script(rnn)
 
+
+    if bidirectional:
+        hidden_size *= 2
     net = Model(rnn, hidden_size=hidden_size).to(device).to(dtype=dtype)
-    optimizer = optim.Adam(net.parameters(), lr=learning_rate, capturable=True)
+    optimizer = optim.AdamW(net.parameters(), lr=learning_rate, capturable=True)
     mse_loss_fn = nn.MSELoss()
 
     net.train()
@@ -124,14 +129,15 @@ if __name__ == "__main__":
                 if epoch % 1 == 0:
                     print("-"*50)
                     print(f"Epoch: {epoch} Loss: {loss.item()}")
-                    uh, uz = net.rnn.rnn[0].u.weight.chunk(2, dim=1)
-                    uh_norm = torch.linalg.matrix_norm(uh, ord=2) 
-                    uz_norm = torch.linalg.matrix_norm(uz, ord=2)
-                    print(f"uh_norm_2: {uh_norm.item()} uz_norm_2: {uz_norm.item()}")
-                    uh_grad, uz_grad = net.rnn.rnn[0].u.weight.grad.chunk(2, dim=1)
-                    uh_grad_norm = torch.linalg.matrix_norm(uh_grad, ord=2)
-                    uz_grad_norm = torch.linalg.matrix_norm(uz_grad, ord=2)
-                    print(f"uh_norm_2_grad: {uh_grad_norm.item()} uz_norm_2_grad: {uz_grad_norm.item()}")
+                    if print_recurrent_weights:
+                        uh, uz = net.rnn.rnn[0].u.weight.chunk(2, dim=1)
+                        uh_norm = torch.linalg.matrix_norm(uh, ord=2) 
+                        uz_norm = torch.linalg.matrix_norm(uz, ord=2)
+                        print(f"uh_norm_2: {uh_norm.item()} uz_norm_2: {uz_norm.item()}")
+                        uh_grad, uz_grad = net.rnn.rnn[0].u.weight.grad.chunk(2, dim=1)
+                        uh_grad_norm = torch.linalg.matrix_norm(uh_grad, ord=2)
+                        uz_grad_norm = torch.linalg.matrix_norm(uz_grad, ord=2)
+                        print(f"uh_norm_2_grad: {uh_grad_norm.item()} uz_norm_2_grad: {uz_grad_norm.item()}")
                     print("-"*50)
     else:
         for epoch in range(epochs+1):
@@ -145,6 +151,9 @@ if __name__ == "__main__":
             optimizer.zero_grad(set_to_none=True)
             y_pred = net(x)
             loss = mse_loss_fn(y_pred, y)
+            with torch.no_grad():
+                external_loss = net.rnn.compute_external_loss()
+            #loss += 0.003 * external_loss
             loss.backward()
             optimizer.step()
 
@@ -152,12 +161,13 @@ if __name__ == "__main__":
                 if epoch % 1 == 0:
                     print("-"*50)
                     print(f"Epoch: {epoch} Loss: {loss.item()}")
-                    uh, uz = net.rnn.rnn[0].u.weight.chunk(2, dim=1)
-                    uh_norm = torch.linalg.matrix_norm(uh, ord=2) 
-                    uz_norm = torch.linalg.matrix_norm(uz, ord=2)
-                    print(f"uh_norm_2: {uh_norm.item()} uz_norm_2: {uz_norm.item()}")
-                    uh_grad, uz_grad = net.rnn.rnn[0].u.weight.grad.chunk(2, dim=1)
-                    uh_grad_norm = torch.linalg.matrix_norm(uh_grad, ord=2)
-                    uz_grad_norm = torch.linalg.matrix_norm(uz_grad, ord=2)
-                    print(f"uh_norm_2_grad: {uh_grad_norm.item()} uz_norm_2_grad: {uz_grad_norm.item()}")
+                    if print_recurrent_weights:
+                        uh, uz = net.rnn.rnn[0].u.weight.chunk(2, dim=1)
+                        uh_norm = torch.linalg.matrix_norm(uh, ord=2) 
+                        uz_norm = torch.linalg.matrix_norm(uz, ord=2)
+                        print(f"uh_norm_2: {uh_norm.item()} uz_norm_2: {uz_norm.item()}")
+                        uh_grad, uz_grad = net.rnn.rnn[0].u.weight.grad.chunk(2, dim=1)
+                        uh_grad_norm = torch.linalg.matrix_norm(uh_grad, ord=2)
+                        uz_grad_norm = torch.linalg.matrix_norm(uz_grad, ord=2)
+                        print(f"uh_norm_2_grad: {uh_grad_norm.item()} uz_norm_2_grad: {uz_grad_norm.item()}")
                     print("-"*50)

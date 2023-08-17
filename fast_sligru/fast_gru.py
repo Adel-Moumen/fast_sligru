@@ -8,7 +8,7 @@ import torch
 from torch import Tensor
 from typing import Optional
 
-class LSTM(torch.nn.Module):
+class GRU(torch.nn.Module):
     def __init__(
         self,
         hidden_size,
@@ -46,7 +46,7 @@ class LSTM(torch.nn.Module):
         current_dim = self.fea_dim
 
         for i in range(self.num_layers):
-            rnn_lay = LSTM_Layer(
+            rnn_lay = GRU_Layer(
                 current_dim,
                 self.hidden_size,
                 self.num_layers,
@@ -64,7 +64,7 @@ class LSTM(torch.nn.Module):
         return rnn
 
     def forward(self, x, hx: Optional[Tensor] = None):
-        """Returns the output of the liLSTM.
+        """Returns the output of the liGRU.
         Arguments
         ---------
         x : torch.Tensor
@@ -77,13 +77,13 @@ class LSTM(torch.nn.Module):
             if x.ndim == 4:
                 x = x.reshape(x.shape[0], x.shape[1], x.shape[2] * x.shape[3])
 
-        # run liLSTM
-        output, hh = self._forward_LSTM(x, hx=hx)
+        # run ligru
+        output, hh = self._forward_gru(x, hx=hx)
 
         return output, hh
 
-    def _forward_LSTM(self, x, hx: Optional[Tensor]):
-        """Returns the output of the vanilla liLSTM.
+    def _forward_gru(self, x, hx: Optional[Tensor]):
+        """Returns the output of the vanilla liGRU.
         Arguments
         ---------
         x : torch.Tensor
@@ -97,11 +97,11 @@ class LSTM(torch.nn.Module):
                     self.num_layers, self.batch_size * 2, self.hidden_size
                 )
         # Processing the different layers
-        for i, liLSTM_lay in enumerate(self.rnn):
+        for i, ligru_lay in enumerate(self.rnn):
             if hx is not None:
-                x = liLSTM_lay(x, hx=hx[i])
+                x = ligru_lay(x, hx=hx[i])
             else:
-                x = liLSTM_lay(x, hx=None)
+                x = ligru_lay(x, hx=None)
             if i != self.num_layers - 1:
                 x = torch.nn.functional.dropout(x, p=self.dropout, training=self.training)
         
@@ -122,8 +122,8 @@ class LSTM(torch.nn.Module):
         return total_loss / self.num_layers
 
 
-class LSTM_Layer(torch.nn.Module):
-    """ This function implements Light-Gated Recurrent Units (liLSTM) layer.
+class GRU_Layer(torch.nn.Module):
+    """ This function implements Light-Gated Recurrent Units (ligru) layer.
     Arguments
     ---------
     input_size : int
@@ -165,7 +165,7 @@ class LSTM_Layer(torch.nn.Module):
         self.bidirectional = bidirectional
         self.dropout = dropout
 
-        self.LSTM = torch.nn.LSTM(
+        self.gru = torch.nn.GRU(
             input_size=self.input_size,
             hidden_size=self.hidden_size,
             num_layers=1,
@@ -182,7 +182,7 @@ class LSTM_Layer(torch.nn.Module):
 
     def forward(self, x, hx: Optional[Tensor] = None):
         # type: (Tensor, Optional[Tensor]) -> Tensor # noqa F821
-        """Returns the output of the LSTM layer.
+        """Returns the output of the GRU layer.
 
         Arguments
         ---------
@@ -192,13 +192,13 @@ class LSTM_Layer(torch.nn.Module):
 
         # Processing time steps
         if hx is not None:
-            h = self._LSTM_cell(x, hx)
+            h = self._gru_cell(x, hx)
         else:
-            h = self._LSTM_cell(x, self.h_init)
+            h = self._gru_cell(x, self.h_init)
 
         return h
 
-    def _LSTM_cell(self, x, ht):
+    def _gru_cell(self, x, ht):
         """Returns the hidden states for each time step.
         Arguments
         ---------
@@ -209,7 +209,7 @@ class LSTM_Layer(torch.nn.Module):
         if x.shape[0] != ht.shape[1]:
             ht = torch.zeros(ht.shape[0], x.shape[0], ht.shape[2]).to(x.device)
 
-        output, h = self.LSTM(x, ht)
+        output, h = self.gru(x, ht)
 
         if self.training:
             self.compute_local_loss(output.max())
@@ -222,12 +222,12 @@ class LSTM_Layer(torch.nn.Module):
         # compute local loss
         lmbd = max_value / 4 * norm_uz + norm_ur + max_value / 4 * norm_uh
 
-        return torch.abs(lmbd - 1)
+        return (lmbd - 1) ** 2
 
     
     def compute_local_loss(self, max_value):
         # get recurrent weights
-        ur, uz, uh = self.LSTM.weight_hh_l0.chunk(3, dim=0)
+        ur, uz, uh = self.gru.weight_hh_l0.chunk(3, dim=0)
 
         # compute l2 norm
         norm_ur = torch.linalg.matrix_norm(ur, ord=2)

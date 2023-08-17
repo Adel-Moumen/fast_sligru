@@ -41,16 +41,15 @@ class SLiGRUCell(Function):
 
         hiddens = []
 
-        if training:
-            candidate_gate = []
-            update_gate = []
-            save_at = []
-            save_mean = [] 
-            save_rstd = []
-            save_recurrent_gate = []
-            
-            ctx.h_init = ht
-            ctx.training = training
+        candidate_gate = []
+        update_gate = []
+        save_at = []
+        save_mean = [] 
+        save_rstd = []
+        save_recurrent_gate = []
+        
+        ctx.h_init = ht
+        ctx.training = training
 
         eps = 1e-5
         normalized_shape = u.size(0)
@@ -68,26 +67,24 @@ class SLiGRUCell(Function):
 
             hiddens.append(ht)
 
-            if training:
-                candidate_gate.append(hcand)
-                update_gate.append(zt_sig)
-                save_at.append(at)
-                save_mean.append(mean)
-                save_rstd.append(rstd)
-                save_recurrent_gate.append(recurrent_gate)
+            candidate_gate.append(hcand)
+            update_gate.append(zt_sig)
+            save_at.append(at)
+            save_mean.append(mean)
+            save_rstd.append(rstd)
+            save_recurrent_gate.append(recurrent_gate)
 
         ht = torch.stack(hiddens, dim=1)
 
-        if training:
-            ctx.save_for_backward(wx, ht, u, drop_mask)
+        ctx.save_for_backward(wx, ht, u, drop_mask)
 
-            ctx.candidate_gate = candidate_gate
-            ctx.update_gate = update_gate
-            ctx.save_at = save_at 
-            ctx.save_mean = save_mean
-            ctx.save_rstd = save_rstd
-            ctx.save_recurrent_gate = save_recurrent_gate
-            ctx.normalized_shape = normalized_shape
+        ctx.candidate_gate = candidate_gate
+        ctx.update_gate = update_gate
+        ctx.save_at = save_at 
+        ctx.save_mean = save_mean
+        ctx.save_rstd = save_rstd
+        ctx.save_recurrent_gate = save_recurrent_gate
+        ctx.normalized_shape = normalized_shape
             
         return ht
 
@@ -468,7 +465,35 @@ class SLiGRU_Layer(torch.nn.Module):
             h = SLiGRUCell.apply(w, ht, self.u.weight, drop_mask, self.training)
         else:
             h = self._sligru_cell_cpu(w, ht, drop_mask)
+
+        if self.training:
+            self.compute_local_loss(h.max())
+
         return h
+
+    @torch.compile
+    def _compute_lambda(self, norm_uz, norm_uh, max_value):
+
+        # compute local loss
+        lmbd = max_value / 4 * norm_uh + norm_uz
+
+        return (lmbd - 1) ** 2
+
+    
+    def compute_local_loss(self, max_value):
+        # get recurrent weights
+        uh, uz = self.u.weight.chunk(2, dim=0)
+
+        # compute l2 norm
+        norm_uz = torch.linalg.matrix_norm(uz, ord=2)
+        norm_uh = torch.linalg.matrix_norm(uh, ord=2)
+
+
+        self.local_loss = self._compute_lambda(
+            norm_uz, norm_uh, max_value
+        )
+        
+
 
     def _init_drop(self):
         """Initializes the recurrent dropout operation. To speed it up,
