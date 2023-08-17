@@ -170,7 +170,7 @@ class GRU_Layer(torch.nn.Module):
             hidden_size=self.hidden_size,
             num_layers=1,
             batch_first=True,
-            dropout=self.dropout,
+            dropout=0.0,
             bidirectional=self.bidirectional,
         )
 
