@@ -1,15 +1,126 @@
-""" This module implements a (SLOW) Stabilised Light GRU (Li-GRU) cell.
+""" This module implements a CUDA Stabilised Light GRU (Li-GRU) cell.
 
 Author:
     * Adel Moumen 2023
 """
+from torch.autograd import Function
 import torch.nn as nn 
 import torch
+import fast_sligru_cpp 
 from torch import Tensor
 from typing import Optional
 
+class LiGRUCell(Function):
+    """ This class implements a CUDA Stabilised Light GRU (Li-GRU) cell.
 
-class SLiGRU(torch.nn.Module):
+    SLi-GRU is single-gate GRU variant that uses a single gate to control the
+    flow of information. 
+
+    For more info see:
+    "Moumen, A., & Parcollet, T. (2023, June). Stabilising and accelerating light gated recurrent units for automatic speech recognition.
+    In ICASSP 2023-2023 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) (pp. 1-5). IEEE."
+    (https://arxiv.org/abs/2302.10144)
+    """
+    @staticmethod
+    def forward(ctx, wx, ht, u, drop_mask, training=False):
+        """ This function implements the forward pass of the SLi-GRU cell.
+
+        Arguments
+        ---------
+        wx : torch.Tensor
+            The input tensor.
+        ht : torch.Tensor
+            The hidden state tensor.
+        u : torch.Tensor
+            The recurrent weight tensor.
+        drop_mask : torch.Tensor
+            The dropout mask tensor.
+        training : bool
+            Whether the model is in training mode or not.
+        """
+
+        hiddens = []
+
+        if training:
+            candidate_gate = []
+            update_gate = []
+            save_at = []
+            save_recurrent_gate = []
+            
+            ctx.h_init = ht
+            ctx.training = training
+        
+        ht = ht.to(wx.dtype)
+        u = u.to(wx.dtype)
+
+        for t in range(wx.shape[1]):
+            ht, hcand, zt_sig, at, recurrent_gate, = fast_sligru_cpp.ligru_forward(
+                wx[:, t], 
+                ht, 
+                u, 
+                drop_mask,
+                training
+            )
+
+            hiddens.append(ht)
+            if training:
+                candidate_gate.append(hcand)
+                update_gate.append(zt_sig)
+                save_at.append(at)
+                save_recurrent_gate.append(recurrent_gate)
+
+        ht = torch.stack(hiddens, dim=1)
+
+        if training:
+            ctx.save_for_backward(wx, ht, u, drop_mask)
+
+            ctx.candidate_gate = candidate_gate
+            ctx.update_gate = update_gate
+            ctx.save_at = save_at 
+            ctx.save_recurrent_gate = save_recurrent_gate
+        return ht
+
+    @staticmethod
+    def backward(ctx, grad_out):
+        """ This function implements the backward pass of the SLi-GRU cell.
+
+        Arguments
+        ---------
+        grad_out : torch.Tensor
+            The gradient of the output.
+        """
+        wx, ht, u, drop_mask, = ctx.saved_tensors
+
+        dh_prev = torch.zeros_like(ht[:, 0])
+        du = torch.zeros_like(u)
+        dwx = torch.zeros_like(wx)
+        grad_out = grad_out.to(wx.dtype)
+        dh_prev = dh_prev.to(wx.dtype)
+        du = du.to(wx.dtype)
+        ctx.h_init = ctx.h_init.to(wx.dtype)
+        for t in reversed(range(wx.shape[1])):
+            ht_ = ctx.h_init  if t - 1 < 0 else ht[:, t - 1]
+            dwx_, dh_prev, du = fast_sligru_cpp.ligru_backward(
+                grad_out[:, t],
+                dh_prev, 
+                ctx.update_gate[t],
+                ctx.save_at[t],
+                drop_mask,
+                ht_, 
+                ctx.candidate_gate[t],
+                u,
+                du,
+                ctx.save_recurrent_gate[t],
+                ctx.training
+            )
+            # CLIP if superior to 1
+            # dh_prev = torch.clamp(dh_prev, max=1)
+        
+            dwx[:, t] = dwx_
+
+        return dwx, None, du, None, None
+
+class LiGRU(torch.nn.Module):
     """ This class implements a Stabilised Light GRU (Li-GRU).
 
     SLi-GRU is single-gate GRU model based on batch-norm + relu
@@ -31,6 +142,7 @@ class SLiGRU(torch.nn.Module):
     In the case of 4d inputs like (batch, time, fea, channel) the tensor is
     flattened as (batch, time, fea*channel).
 
+
     Arguments
     ---------
     hidden_size : int
@@ -38,12 +150,12 @@ class SLiGRU(torch.nn.Module):
         values (i.e, time and frequency kernel sizes respectively).
     input_shape : tuple
         The shape of an example input.
-    nonlinearity : str
-        Type of nonlinearity (tanh, relu).
-    normalization : str
-        Type of normalization for the ligru model (batchnorm, layernorm).
+    ff_normalization : str
+        Type of feedforward normalization for the ligru model (batchnorm, layernorm).
         Every string different from batchnorm and layernorm will result
         in no normalization.
+    recurrent_elementwise_affine : bool
+        A boolean value that when set to True will enable the learnable affine parameters.
     num_layers : int
         Number of layers to employ in the RNN architecture.
     bias : bool
@@ -60,7 +172,7 @@ class SLiGRU(torch.nn.Module):
     Example
     -------
     >>> inp_tensor = torch.rand([4, 10, 20])
-    >>> net = LiGRU(input_shape=inp_tensor.shape, hidden_size=5)
+    >>> net = SLiGRU(input_shape=inp_tensor.shape, hidden_size=5)
     >>> out_tensor, _ = net(inp_tensor)
     >>>
     torch.Size([4, 10, 5])
@@ -70,8 +182,7 @@ class SLiGRU(torch.nn.Module):
         self,
         hidden_size,
         input_shape,
-        nonlinearity="relu",
-        normalization="batchnorm",
+        ff_normalization="batchnorm",
         num_layers=1,
         bias=True,
         dropout=0.0,
@@ -80,9 +191,8 @@ class SLiGRU(torch.nn.Module):
     ):
         super().__init__()
         self.hidden_size = hidden_size
-        self.nonlinearity = nonlinearity
         self.num_layers = num_layers
-        self.normalization = normalization
+        self.ff_normalization = ff_normalization
         self.bias = bias
         self.dropout = dropout
         self.re_init = re_init
@@ -100,19 +210,18 @@ class SLiGRU(torch.nn.Module):
             rnn_init(self.rnn)
 
     def _init_layers(self):
-        """Initializes the layers of the Li-GRU."""
+        """Initializes the layers of the SLi-GRU."""
         rnn = torch.nn.ModuleList([])
         current_dim = self.fea_dim
 
         for i in range(self.num_layers):
-            rnn_lay = LiGRU_Layer(
+            rnn_lay = SLiGRU_Layer(
                 current_dim,
                 self.hidden_size,
                 self.num_layers,
                 self.batch_size,
                 dropout=self.dropout,
-                nonlinearity=self.nonlinearity,
-                normalization=self.normalization,
+                ff_normalization=self.ff_normalization,
                 bias=self.bias,
                 bidirectional=self.bidirectional,
             )
@@ -125,7 +234,7 @@ class SLiGRU(torch.nn.Module):
         return rnn
 
     def forward(self, x, hx: Optional[Tensor] = None):
-        """Returns the output of the Li-GRU.
+        """Returns the output of the SLi-GRU.
 
         Arguments
         ---------
@@ -140,12 +249,12 @@ class SLiGRU(torch.nn.Module):
                 x = x.reshape(x.shape[0], x.shape[1], x.shape[2] * x.shape[3])
 
         # run ligru
-        output, hh = self._forward_ligru(x, hx=hx)
-
+        output, hh = self._forward_sligru(x, hx=hx)
+        
         return output, hh
 
-    def _forward_ligru(self, x, hx: Optional[Tensor]):
-        """Returns the output of the vanilla Li-GRU.
+    def _forward_sligru(self, x, hx: Optional[Tensor]):
+        """Returns the output of the vanilla SLi-GRU.
 
         Arguments
         ---------
@@ -160,11 +269,11 @@ class SLiGRU(torch.nn.Module):
                     self.num_layers, self.batch_size * 2, self.hidden_size
                 )
         # Processing the different layers
-        for i, ligru_lay in enumerate(self.rnn):
+        for i, sligru_lay in enumerate(self.rnn):
             if hx is not None:
-                x = ligru_lay(x, hx=hx[i])
+                x = sligru_lay(x, hx=hx[i])
             else:
-                x = ligru_lay(x, hx=None)
+                x = sligru_lay(x, hx=None)
             h.append(x[:, -1, :])
         h = torch.stack(h, dim=1)
 
@@ -175,9 +284,20 @@ class SLiGRU(torch.nn.Module):
 
         return x, h
 
-
-class LiGRU_Layer(torch.nn.Module):
-    """ This class implements Light-Gated Recurrent Units (Li-GRU) layer.
+    def get_lambda(self):
+        lambdas = []
+        for layer in self.rnn:
+            lambdas.append(layer.local_lambda)
+        return lambdas
+    
+    def get_recurrent_norm_weights(self):
+        norms = []
+        for layer in self.rnn:
+            norms.append(layer.recurrent_norm_weights)
+        return norms
+    
+class SLiGRU_Layer(torch.nn.Module):
+    """ This class implements a Stabilised Light-Gated Recurrent Units (SLi-GRU) layer.
 
     Arguments
     ---------
@@ -193,10 +313,13 @@ class LiGRU_Layer(torch.nn.Module):
         It is the dropout factor (must be between 0 and 1).
     nonlinearity : str
         Type of nonlinearity (tanh, sin, leaky_relu, relu).
-    normalization : str
+    ff_normalization : str
         Type of normalization (batchnorm, layernorm).
         Every string different from batchnorm and layernorm will result
         in layer normalization.
+        Note that this only applies to the feedforward affine transform.
+        SLi-GRU (unlike Li-GRU) unconditionally applies layer normalization in
+        the recurrent layers, which is unaffected by this parameter.
     bias: bool
         If True, the additive bias b is adopted.
     bidirectional : bool
@@ -211,13 +334,12 @@ class LiGRU_Layer(torch.nn.Module):
         num_layers,
         batch_size,
         dropout=0.0,
-        nonlinearity="relu",
-        normalization="batchnorm",
+        ff_normalization="batchnorm",
         bias=True,
         bidirectional=False,
     ):
 
-        super(LiGRU_Layer, self).__init__()
+        super(SLiGRU_Layer, self).__init__()
         self.hidden_size = int(hidden_size)
         self.input_size = int(input_size)
         self.batch_size = batch_size
@@ -229,21 +351,16 @@ class LiGRU_Layer(torch.nn.Module):
 
         self.u = nn.Linear(self.hidden_size, 2 * self.hidden_size, bias=False)
 
-        self.layer_norm = nn.LayerNorm(
-            2 * self.hidden_size, elementwise_affine=False
-        )
-
         if self.bidirectional:
             self.batch_size = self.batch_size * 2
 
         # Initializing batch norm
         self.normalize = False
 
-        if normalization == "batchnorm":
+        if ff_normalization == "batchnorm":
             self.norm = nn.BatchNorm1d(2 * self.hidden_size, momentum=0.05)
             self.normalize = True
-
-        elif normalization == "layernorm":
+        elif ff_normalization == "layernorm":
             self.norm = torch.nn.LayerNorm(2 * self.hidden_size)
             self.normalize = True
         else:
@@ -263,15 +380,7 @@ class LiGRU_Layer(torch.nn.Module):
         # Preloading dropout masks (gives some speed improvement)
         self._init_drop()
 
-        # Setting the activation function
-        if nonlinearity == "tanh":
-            self.act = torch.nn.Tanh()
-        elif nonlinearity == "sin":
-            self.act = torch.sin
-        elif nonlinearity == "leaky_relu":
-            self.act = torch.nn.LeakyReLU()
-        else:
-            self.act = torch.nn.ReLU()
+        self.act = torch.nn.ReLU()
 
     def forward(self, x, hx: Optional[Tensor] = None):
         # type: (Tensor, Optional[Tensor]) -> Tensor # noqa F821
@@ -299,11 +408,16 @@ class LiGRU_Layer(torch.nn.Module):
             w_bn = self.norm(w.reshape(w.shape[0] * w.shape[1], w.shape[2]))
             w = w_bn.reshape(w.shape[0], w.shape[1], w.shape[2])
 
+        # Sampling dropout mask
+        drop_mask = self._sample_drop_mask(w)
+
         # Processing time steps
         if hx is not None:
-            h = self._ligru_cell(w, hx)
+            h = self._sligru_cell(w, hx, drop_mask)
         else:
-            h = self._ligru_cell(w, self.h_init)
+            # broadcast to include batch size, this makes torch.compile happier
+            h_init = self.h_init.broadcast_to(w.shape[0], self.h_init.shape[1])
+            h = self._sligru_cell(w, h_init, drop_mask)
 
         if self.bidirectional:
             h_f, h_b = h.chunk(2, dim=0)
@@ -311,26 +425,17 @@ class LiGRU_Layer(torch.nn.Module):
             h = torch.cat([h_f, h_b], dim=2)
 
         return h
-
-    def _ligru_cell(self, w, ht):
-        """Returns the hidden states for each time step.
-
-        Arguments
-        ---------
-        wx : torch.Tensor
-            Linearly transformed input.
-        ht : torch.Tensor
-            Hidden state.
-        """
+    
+    def _sligru_cell_cpu(self, w, ht, drop_mask):
         hiddens = []
 
-        # Sampling dropout mask
-        drop_mask = self._sample_drop_mask(w)
+        uh, uz = self.u.weight.chunk(2, dim=0)
 
         # Loop over time axis
         for k in range(w.shape[1]):
-            gates = w[:, k] + self.u(ht) # self.layer_norm(self.u(ht))
-            at, zt = gates.chunk(2, 1)
+            wh, wz = w[:, k].chunk(2, 1)
+            at = wh + (ht @ uh.T)
+            zt = wz + (ht @ uz.T)
             zt = torch.sigmoid(zt)
             hcand = self.act(at) * drop_mask
             ht = zt * ht + (1 - zt) * hcand
@@ -338,7 +443,60 @@ class LiGRU_Layer(torch.nn.Module):
 
         # Stacking hidden states
         h = torch.stack(hiddens, dim=1)
+
+        # lmdb = self.compute_local_loss(h.max())
         return h
+
+    @torch.jit.ignore
+    def _sligru_cell(self, w, ht, drop_mask):
+        """Returns the hidden states for each time step.
+
+        Arguments
+        ---------
+        w : torch.Tensor
+            Linearly transformed input.
+        ht : torch.Tensor
+            Hidden state.
+        drop_mask : torch.Tensor
+            Dropout mask.
+        """
+    
+        if w.is_cuda:
+            if not self.training:
+                # [H] -> [B, H] it makes the compiler happy
+                drop_mask = drop_mask.repeat(w.shape[0], 1)
+            
+            h = LiGRUCell.apply(w, ht, self.u.weight, drop_mask, self.training)
+        else:
+            h = self._sligru_cell_cpu(w, ht, drop_mask)
+    
+        self.compute_local_loss(h.max())
+
+        return h
+
+    def _compute_lambda(self, norm_uz, norm_uh, max_value):
+        # compute local loss
+        lmbd = max_value / 4 * norm_uz  + norm_uh
+        return lmbd
+
+    
+    def compute_local_loss(self, max_value):
+        # get recurrent weights
+        uh, uz = self.u.weight.chunk(2, dim=0)
+        # need to cast to fp32 for torch.linalg.matrix_norm
+        uh = uh.to(torch.float32)
+        uz = uz.to(torch.float32)
+
+        # compute l2 norm
+        norm_uh = torch.linalg.matrix_norm(uh, ord=2)
+        norm_uz = torch.linalg.matrix_norm(uz, ord=2)
+        
+        self.recurrent_norm_weights = {"uz": norm_uz, "uh":norm_uh}
+
+        self.local_lambda = self._compute_lambda(
+            norm_uz, norm_uh, max_value
+        )
+        
 
     def _init_drop(self):
         """Initializes the recurrent dropout operation. To speed it up,
@@ -351,6 +509,7 @@ class LiGRU_Layer(torch.nn.Module):
         self.register_buffer(
             "drop_masks",
             self.drop(torch.ones(self.N_drop_masks, self.hidden_size)).data,
+            persistent=False,
         )
         self.register_buffer("drop_mask_te", torch.tensor([1.0]).float())
 
@@ -374,10 +533,11 @@ class LiGRU_Layer(torch.nn.Module):
             self.drop_mask_cnt = self.drop_mask_cnt + self.batch_size
 
         else:
-            self.drop_mask_te = self.drop_mask_te.to(w.device)
-            drop_mask = self.drop_mask_te
+            drop_mask = torch.ones(
+                self.hidden_size, device=w.device
+            )
 
-        return drop_mask
+        return drop_mask.to(w.dtype)
 
     def _change_batch_size(self, x):
         """This function changes the batch size when it is different from
@@ -394,7 +554,6 @@ class LiGRU_Layer(torch.nn.Module):
                         self.N_drop_masks, self.hidden_size, device=x.device,
                     )
                 ).data
-
 
 def rnn_init(module):
     """This function is used to initialize the RNN weight.

@@ -40,6 +40,7 @@ class SLiGRUCell(Function):
         """
 
         hiddens = []
+
         candidate_gate = []
         update_gate = []
         save_at = []
@@ -49,6 +50,7 @@ class SLiGRUCell(Function):
         
         ctx.h_init = ht
         ctx.training = training
+
         eps = 1e-5
         normalized_shape = u.size(0)
 
@@ -64,6 +66,7 @@ class SLiGRUCell(Function):
             )
 
             hiddens.append(ht)
+
             candidate_gate.append(hcand)
             update_gate.append(zt_sig)
             save_at.append(at)
@@ -72,6 +75,7 @@ class SLiGRUCell(Function):
             save_recurrent_gate.append(recurrent_gate)
 
         ht = torch.stack(hiddens, dim=1)
+
         ctx.save_for_backward(wx, ht, u, drop_mask)
 
         ctx.candidate_gate = candidate_gate
@@ -81,10 +85,13 @@ class SLiGRUCell(Function):
         ctx.save_rstd = save_rstd
         ctx.save_recurrent_gate = save_recurrent_gate
         ctx.normalized_shape = normalized_shape
-        return ht
+
+        save_rstd = torch.stack(save_rstd, dim=1)
+
+        return ht, save_rstd
 
     @staticmethod
-    def backward(ctx, grad_out):
+    def backward(ctx, grad_out, _):
         """ This function implements the backward pass of the SLi-GRU cell.
 
         Arguments
@@ -117,7 +124,9 @@ class SLiGRUCell(Function):
                 ctx.normalized_shape,
                 ctx.training
             )
-
+            # CLIP if superior to 1
+            # dh_prev = torch.clamp(dh_prev, max=1)
+        
             dwx[:, t] = dwx_
 
         return dwx, None, du, None, None
@@ -285,7 +294,12 @@ class SLiGRU(torch.nn.Module):
             h = h.transpose(0, 1)
 
         return x, h
-
+    
+    def compute_external_loss(self):
+        total_loss = 0
+        for layer in self.rnn:
+            total_loss += layer.local_loss
+        return total_loss / self.num_layers
 
 class SLiGRU_Layer(torch.nn.Module):
     """ This class implements a Stabilised Light-Gated Recurrent Units (SLi-GRU) layer.
@@ -427,7 +441,7 @@ class SLiGRU_Layer(torch.nn.Module):
         hiddens = []
 
         for t in range(w.shape[1]):
-            gates = w[:, t] + self.layer_norm(self.u(w))
+            gates = w[:, t] + self.layer_norm(self.u(ht))
             at, zt = gates.chunk(2, 1)
             zt = torch.sigmoid(zt)
             hcand = self.act(at) * drop_mask
@@ -455,10 +469,42 @@ class SLiGRU_Layer(torch.nn.Module):
             if not self.training:
                 # [H] -> [B, H] it makes the compiler happy
                 drop_mask = drop_mask.repeat(w.shape[0], 1)
-            h = SLiGRUCell.apply(w, ht, self.u.weight, drop_mask, self.training)
+            h, save_rstd = SLiGRUCell.apply(w, ht, self.u.weight, drop_mask, self.training)
+            self.compute_local_loss(h.max(), save_rstd)
         else:
             h = self._sligru_cell_cpu(w, ht, drop_mask)
+            self.local_loss = torch.tensor(-1)
+            
         return h
+
+    def _compute_lambda(self, norm_uz, norm_uh, max_value, max_rstd_h, max_rstd_z):
+
+        # compute local loss
+        lmbd = max_value / (4 * max_rstd_z) * norm_uz  + 1/max_rstd_h * norm_uh
+
+        return (lmbd - 1) ** 2
+
+    
+    def compute_local_loss(self, max_value, save_rstd):
+
+        rstd_h, rstd_z = save_rstd.chunk(2, dim=0)
+
+        max_rstd_h = rstd_h.max()
+        max_rstd_z = rstd_z.max()
+
+        # get recurrent weights
+        uh, uz = self.u.weight.chunk(2, dim=0)
+
+        # compute l2 norm
+        norm_uz = torch.linalg.matrix_norm(uz, ord=2)
+        norm_uh = torch.linalg.matrix_norm(uh, ord=2)
+
+
+        self.local_loss = self._compute_lambda(
+            norm_uz, norm_uh, max_value, max_rstd_h, max_rstd_z
+        )
+        
+
 
     def _init_drop(self):
         """Initializes the recurrent dropout operation. To speed it up,

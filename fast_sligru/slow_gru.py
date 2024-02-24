@@ -1,4 +1,4 @@
-""" This module implements a (SLOW) Stabilised Light GRU (Li-GRU) cell.
+""" This module implements a (SLOW) Gated Recurrent Units (GRU).
 
 Author:
     * Adel Moumen 2023
@@ -8,70 +8,12 @@ import torch
 from torch import Tensor
 from typing import Optional
 
-
-class SLiGRU(torch.nn.Module):
-    """ This class implements a Stabilised Light GRU (Li-GRU).
-
-    SLi-GRU is single-gate GRU model based on batch-norm + relu
-    activations + layer-norm on the recurrent connections + recurrent dropout.
-
-    The SLi-GRU differs from the vanilla Li-GRU on the recurrent weights. Indeed, the Li-GRU
-    suffers from an exploding gradient problem on the recurrent weights, and cannot be trained on medium to large ASR dataset.
-    To solve this problem, we use a layer-norm on the recurrent weights that stabilises the training of the model and allows one
-    to train it on large ASR datasets without any problem.
-
-    This model beat traditional LSTM/GRU models on the CommonVoice/LibriSpeech datasets (WER and efficiency).
-
-    For more info see:
-    "Moumen, A., & Parcollet, T. (2023, June). Stabilising and accelerating light gated recurrent units for automatic speech recognition.
-    In ICASSP 2023-2023 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) (pp. 1-5). IEEE."
-    (https://arxiv.org/abs/2302.10144)
-
-    It accepts in input tensors formatted as (batch, time, fea).
-    In the case of 4d inputs like (batch, time, fea, channel) the tensor is
-    flattened as (batch, time, fea*channel).
-
-    Arguments
-    ---------
-    hidden_size : int
-        Number of output neurons (i.e, the dimensionality of the output).
-        values (i.e, time and frequency kernel sizes respectively).
-    input_shape : tuple
-        The shape of an example input.
-    nonlinearity : str
-        Type of nonlinearity (tanh, relu).
-    normalization : str
-        Type of normalization for the ligru model (batchnorm, layernorm).
-        Every string different from batchnorm and layernorm will result
-        in no normalization.
-    num_layers : int
-        Number of layers to employ in the RNN architecture.
-    bias : bool
-        If True, the additive bias b is adopted.
-    dropout : float
-        It is the dropout factor (must be between 0 and 1).
-    re_init : bool
-        If True, orthogonal initialization is used for the recurrent weights.
-        Xavier initialization is used for the input connection weights.
-    bidirectional : bool
-        If True, a bidirectional model that scans the sequence both
-        right-to-left and left-to-right is used.
-
-    Example
-    -------
-    >>> inp_tensor = torch.rand([4, 10, 20])
-    >>> net = LiGRU(input_shape=inp_tensor.shape, hidden_size=5)
-    >>> out_tensor, _ = net(inp_tensor)
-    >>>
-    torch.Size([4, 10, 5])
-    """
-
+class GRU(torch.nn.Module):
     def __init__(
         self,
         hidden_size,
         input_shape,
         nonlinearity="relu",
-        normalization="batchnorm",
         num_layers=1,
         bias=True,
         dropout=0.0,
@@ -82,7 +24,6 @@ class SLiGRU(torch.nn.Module):
         self.hidden_size = hidden_size
         self.nonlinearity = nonlinearity
         self.num_layers = num_layers
-        self.normalization = normalization
         self.bias = bias
         self.dropout = dropout
         self.re_init = re_init
@@ -100,20 +41,18 @@ class SLiGRU(torch.nn.Module):
             rnn_init(self.rnn)
 
     def _init_layers(self):
-        """Initializes the layers of the Li-GRU."""
+        """Initializes the layers of the liGRU."""
         rnn = torch.nn.ModuleList([])
         current_dim = self.fea_dim
 
         for i in range(self.num_layers):
-            rnn_lay = LiGRU_Layer(
+            rnn_lay = GRU_Layer(
                 current_dim,
                 self.hidden_size,
                 self.num_layers,
                 self.batch_size,
                 dropout=self.dropout,
                 nonlinearity=self.nonlinearity,
-                normalization=self.normalization,
-                bias=self.bias,
                 bidirectional=self.bidirectional,
             )
             rnn.append(rnn_lay)
@@ -125,8 +64,7 @@ class SLiGRU(torch.nn.Module):
         return rnn
 
     def forward(self, x, hx: Optional[Tensor] = None):
-        """Returns the output of the Li-GRU.
-
+        """Returns the output of the liGRU.
         Arguments
         ---------
         x : torch.Tensor
@@ -140,13 +78,12 @@ class SLiGRU(torch.nn.Module):
                 x = x.reshape(x.shape[0], x.shape[1], x.shape[2] * x.shape[3])
 
         # run ligru
-        output, hh = self._forward_ligru(x, hx=hx)
+        output, hh = self._forward_gru(x, hx=hx)
 
         return output, hh
 
-    def _forward_ligru(self, x, hx: Optional[Tensor]):
-        """Returns the output of the vanilla Li-GRU.
-
+    def _forward_gru(self, x, hx: Optional[Tensor]):
+        """Returns the output of the vanilla liGRU.
         Arguments
         ---------
         x : torch.Tensor
@@ -176,29 +113,26 @@ class SLiGRU(torch.nn.Module):
         return x, h
 
 
-class LiGRU_Layer(torch.nn.Module):
-    """ This class implements Light-Gated Recurrent Units (Li-GRU) layer.
-
+class GRU_Layer(torch.nn.Module):
+    """ This function implements Light-Gated Recurrent Units (ligru) layer.
     Arguments
     ---------
     input_size : int
         Feature dimensionality of the input tensors.
+    batch_size : int
+        Batch size of the input tensors.
     hidden_size : int
         Number of output neurons.
     num_layers : int
-        The layer number.
-    batch_size : int
-        Batch size of the input tensors.
-    dropout : float
-        It is the dropout factor (must be between 0 and 1).
-    nonlinearity : str
-        Type of nonlinearity (tanh, sin, leaky_relu, relu).
+        Number of layers to employ in the RNN architecture.
     normalization : str
         Type of normalization (batchnorm, layernorm).
         Every string different from batchnorm and layernorm will result
-        in layer normalization.
-    bias: bool
-        If True, the additive bias b is adopted.
+        in no normalization.
+    dropout : float
+        It is the dropout factor (must be between 0 and 1).
+    nonlinearity : str
+        Type of nonlinearity (tanh, relu).
     bidirectional : bool
         if True, a bidirectional model that scans the sequence both
         right-to-left and left-to-right is used.
@@ -212,56 +146,28 @@ class LiGRU_Layer(torch.nn.Module):
         batch_size,
         dropout=0.0,
         nonlinearity="relu",
-        normalization="batchnorm",
-        bias=True,
         bidirectional=False,
     ):
 
-        super(LiGRU_Layer, self).__init__()
+        super(GRU_Layer, self).__init__()
         self.hidden_size = int(hidden_size)
         self.input_size = int(input_size)
         self.batch_size = batch_size
         self.bidirectional = bidirectional
         self.dropout = dropout
-        self.bias = bias
 
-        self.w = nn.Linear(self.input_size, 2 * self.hidden_size, bias=False)
+        self.w = nn.Linear(self.input_size, 3 * self.hidden_size, bias=True)
 
-        self.u = nn.Linear(self.hidden_size, 2 * self.hidden_size, bias=False)
-
-        self.layer_norm = nn.LayerNorm(
-            2 * self.hidden_size, elementwise_affine=False
-        )
+        self.u = nn.Linear(self.hidden_size, 3 * self.hidden_size, bias=False)
 
         if self.bidirectional:
             self.batch_size = self.batch_size * 2
-
-        # Initializing batch norm
-        self.normalize = False
-
-        if normalization == "batchnorm":
-            self.norm = nn.BatchNorm1d(2 * self.hidden_size, momentum=0.05)
-            self.normalize = True
-
-        elif normalization == "layernorm":
-            self.norm = torch.nn.LayerNorm(2 * self.hidden_size)
-            self.normalize = True
-        else:
-            # Normalization is disabled here. self.norm is only  formally
-            # initialized to avoid jit issues.
-            self.norm = torch.nn.LayerNorm(2 * self.hidden_size)
-            self.normalize = True
-
-        # we freeze the bias of the normalization layer
-        if not self.bias:
-            self.norm.bias.data.fill_(0)
-            self.norm.bias.requires_grad = False
 
         # Initial state
         self.register_buffer("h_init", torch.zeros(1, self.hidden_size))
 
         # Preloading dropout masks (gives some speed improvement)
-        self._init_drop()
+        self._init_drop(self.batch_size)
 
         # Setting the activation function
         if nonlinearity == "tanh":
@@ -276,13 +182,10 @@ class LiGRU_Layer(torch.nn.Module):
     def forward(self, x, hx: Optional[Tensor] = None):
         # type: (Tensor, Optional[Tensor]) -> Tensor # noqa F821
         """Returns the output of the liGRU layer.
-
         Arguments
         ---------
         x : torch.Tensor
             Input tensor.
-        hx : torch.Tensor
-            Hidden state.
         """
         if self.bidirectional:
             x_flip = x.flip(1)
@@ -294,16 +197,11 @@ class LiGRU_Layer(torch.nn.Module):
         # Feed-forward affine transformations (all steps in parallel)
         w = self.w(x)
 
-        # Apply batch normalization
-        if self.normalize:
-            w_bn = self.norm(w.reshape(w.shape[0] * w.shape[1], w.shape[2]))
-            w = w_bn.reshape(w.shape[0], w.shape[1], w.shape[2])
-
         # Processing time steps
         if hx is not None:
-            h = self._ligru_cell(w, hx)
+            h = self._gru_cell(w, hx)
         else:
-            h = self._ligru_cell(w, self.h_init)
+            h = self._gru_cell(w, self.h_init)
 
         if self.bidirectional:
             h_f, h_b = h.chunk(2, dim=0)
@@ -312,15 +210,12 @@ class LiGRU_Layer(torch.nn.Module):
 
         return h
 
-    def _ligru_cell(self, w, ht):
+    def _gru_cell(self, w, ht):
         """Returns the hidden states for each time step.
-
         Arguments
         ---------
         wx : torch.Tensor
             Linearly transformed input.
-        ht : torch.Tensor
-            Hidden state.
         """
         hiddens = []
 
@@ -329,10 +224,11 @@ class LiGRU_Layer(torch.nn.Module):
 
         # Loop over time axis
         for k in range(w.shape[1]):
-            gates = w[:, k] + self.u(ht) # self.layer_norm(self.u(ht))
-            at, zt = gates.chunk(2, 1)
-            zt = torch.sigmoid(zt)
-            hcand = self.act(at) * drop_mask
+            wat, wzt, wrt = w[:, k].chunk(3, -1)
+            uat, uzt, urt = self.u(ht).chunk(3, -1)
+            zt = torch.sigmoid(wzt + uzt)
+            rt = torch.sigmoid(wrt + urt)
+            hcand = self.act(wat + rt * uat) * drop_mask
             ht = zt * ht + (1 - zt) * hcand
             hiddens.append(ht)
 
@@ -340,7 +236,7 @@ class LiGRU_Layer(torch.nn.Module):
         h = torch.stack(hiddens, dim=1)
         return h
 
-    def _init_drop(self):
+    def _init_drop(self, batch_size):
         """Initializes the recurrent dropout operation. To speed it up,
         the dropout masks are sampled in advance.
         """
