@@ -85,11 +85,13 @@ class SLiGRUCell(Function):
         ctx.save_rstd = save_rstd
         ctx.save_recurrent_gate = save_recurrent_gate
         ctx.normalized_shape = normalized_shape
-            
-        return ht
+
+        save_rstd = torch.stack(save_rstd, dim=1)
+
+        return ht, save_rstd
 
     @staticmethod
-    def backward(ctx, grad_out):
+    def backward(ctx, grad_out, _):
         """ This function implements the backward pass of the SLi-GRU cell.
 
         Arguments
@@ -292,7 +294,12 @@ class SLiGRU(torch.nn.Module):
             h = h.transpose(0, 1)
 
         return x, h
-
+    
+    def compute_external_loss(self):
+        total_loss = 0
+        for layer in self.rnn:
+            total_loss += layer.local_loss
+        return total_loss / self.num_layers
 
 class SLiGRU_Layer(torch.nn.Module):
     """ This class implements a Stabilised Light-Gated Recurrent Units (SLi-GRU) layer.
@@ -462,24 +469,29 @@ class SLiGRU_Layer(torch.nn.Module):
             if not self.training:
                 # [H] -> [B, H] it makes the compiler happy
                 drop_mask = drop_mask.repeat(w.shape[0], 1)
-            h = SLiGRUCell.apply(w, ht, self.u.weight, drop_mask, self.training)
+            h, save_rstd = SLiGRUCell.apply(w, ht, self.u.weight, drop_mask, self.training)
+            self.compute_local_loss(h.max(), save_rstd)
         else:
             h = self._sligru_cell_cpu(w, ht, drop_mask)
-
-        self.compute_local_loss(h.max())
-
+            self.local_loss = torch.tensor(-1)
+            
         return h
 
-    @torch.compile
-    def _compute_lambda(self, norm_uz, norm_uh, max_value):
+    def _compute_lambda(self, norm_uz, norm_uh, max_value, max_rstd_h, max_rstd_z):
 
         # compute local loss
-        lmbd = max_value / 4 * norm_uh + norm_uz
+        lmbd = max_value / (4 * max_rstd_z) * norm_uz  + 1/max_rstd_h * norm_uh
 
         return (lmbd - 1) ** 2
 
     
-    def compute_local_loss(self, max_value):
+    def compute_local_loss(self, max_value, save_rstd):
+
+        rstd_h, rstd_z = save_rstd.chunk(2, dim=0)
+
+        max_rstd_h = rstd_h.max()
+        max_rstd_z = rstd_z.max()
+
         # get recurrent weights
         uh, uz = self.u.weight.chunk(2, dim=0)
 
@@ -489,7 +501,7 @@ class SLiGRU_Layer(torch.nn.Module):
 
 
         self.local_loss = self._compute_lambda(
-            norm_uz, norm_uh, max_value
+            norm_uz, norm_uh, max_value, max_rstd_h, max_rstd_z
         )
         
 

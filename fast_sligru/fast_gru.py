@@ -215,7 +215,6 @@ class GRU_Layer(torch.nn.Module):
 
         return output
     
-    @torch.compile
     def _compute_lambda(self, norm_uz, norm_ur, norm_uh, max_value):
 
         # compute local loss
@@ -237,7 +236,6 @@ class GRU_Layer(torch.nn.Module):
         self.local_loss = self._compute_lambda(
             norm_uz, norm_ur, norm_uh, max_value
         )
-        
 
 
 def rnn_init(module):

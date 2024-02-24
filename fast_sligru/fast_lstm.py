@@ -115,11 +115,18 @@ class LSTM(torch.nn.Module):
 
         return x, h
 
-    def compute_external_loss(self):
-        total_loss = 0
+    def get_lambda(self):
+        lambdas = []
         for layer in self.rnn:
-            total_loss += layer.local_loss
-        return total_loss / self.num_layers
+            lambdas.append(layer.local_lambda)
+        return lambdas
+    
+    def get_recurrent_norm_weights(self):
+        norms = []
+        for layer in self.rnn:
+            norms.append(layer.recurrent_norm_weights)
+        return norms
+    
     
 class LSTM_Layer(torch.nn.Module):
     def __init__(
@@ -154,9 +161,13 @@ class LSTM_Layer(torch.nn.Module):
             self.batch_size = self.batch_size * 2
 
         # Initial state
-        self.register_buffer("h_init", torch.zeros(2, self.batch_size, self.hidden_size))
-        self.register_buffer("c_init", torch.zeros(2, self.batch_size, self.hidden_size))
-
+        if not self.bidirectional:
+            self.register_buffer("h_init", torch.zeros(1, self.batch_size, self.hidden_size))
+            self.register_buffer("c_init", torch.zeros(1, self.batch_size, self.hidden_size))
+        else:
+            self.register_buffer("h_init", torch.zeros(2, self.batch_size, self.hidden_size))
+            self.register_buffer("c_init", torch.zeros(2, self.batch_size, self.hidden_size))
+            
 
     def forward(self, x, hx: Optional[Tuple[torch.Tensor, torch.Tensor]] = None):
         # type: (torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]) -> Tuple[torch.Tensor, torch.Tensor] # noqa F821
@@ -195,19 +206,21 @@ class LSTM_Layer(torch.nn.Module):
 
         return output
     
-    @torch.compile
+    
     def _compute_lambda(self, norm_ui, norm_uf, norm_ug, norm_uo, max_value):
 
         lmbd = 1/4 * norm_ui + max_value / 4 * norm_uf + norm_ug + 1/4 * norm_uo 
 
-        return (lmbd - 1) ** 2
+        return lmbd
 
-    
     def compute_local_loss(self, max_value):
         # get recurrent weights
         # (W_hi|W_hf|W_hg|W_ho)
         ui, uf, ug, uo = self.lstm.weight_hh_l0.chunk(4, dim=0)
-
+        ui = ui.to(torch.float32)
+        uf = uf.to(torch.float32)
+        ug = ug.to(torch.float32)
+        uo = uo.to(torch.float32)
 
         # compute l2 norm
         norm_ui = torch.linalg.matrix_norm(ui, ord=2)
@@ -215,8 +228,14 @@ class LSTM_Layer(torch.nn.Module):
         norm_ug = torch.linalg.matrix_norm(ug, ord=2)
         norm_uo = torch.linalg.matrix_norm(uo, ord=2)
 
+        self.recurrent_norm_weights = {
+            "norm_ui": norm_ui,
+            "norm_uf": norm_uf,
+            "norm_ug": norm_ug,
+            "norm_uo": norm_uo,
+        }
 
-        self.local_loss = self._compute_lambda(
+        self.local_lambda = self._compute_lambda(
             norm_ui, norm_uf, norm_ug, norm_uo, max_value
         )
         

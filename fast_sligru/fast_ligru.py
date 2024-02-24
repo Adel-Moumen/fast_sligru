@@ -49,6 +49,9 @@ class LiGRUCell(Function):
             
             ctx.h_init = ht
             ctx.training = training
+        
+        ht = ht.to(wx.dtype)
+        u = u.to(wx.dtype)
 
         for t in range(wx.shape[1]):
             ht, hcand, zt_sig, at, recurrent_gate, = fast_sligru_cpp.ligru_forward(
@@ -91,7 +94,10 @@ class LiGRUCell(Function):
         dh_prev = torch.zeros_like(ht[:, 0])
         du = torch.zeros_like(u)
         dwx = torch.zeros_like(wx)
-
+        grad_out = grad_out.to(wx.dtype)
+        dh_prev = dh_prev.to(wx.dtype)
+        du = du.to(wx.dtype)
+        ctx.h_init = ctx.h_init.to(wx.dtype)
         for t in reversed(range(wx.shape[1])):
             ht_ = ctx.h_init  if t - 1 < 0 else ht[:, t - 1]
             dwx_, dh_prev, du = fast_sligru_cpp.ligru_backward(
@@ -278,11 +284,17 @@ class LiGRU(torch.nn.Module):
 
         return x, h
 
-    def compute_external_loss(self):
-        total_loss = 0
+    def get_lambda(self):
+        lambdas = []
         for layer in self.rnn:
-            total_loss += layer.local_loss
-        return total_loss / self.num_layers
+            lambdas.append(layer.local_lambda)
+        return lambdas
+    
+    def get_recurrent_norm_weights(self):
+        norms = []
+        for layer in self.rnn:
+            norms.append(layer.recurrent_norm_weights)
+        return norms
     
 class SLiGRU_Layer(torch.nn.Module):
     """ This class implements a Stabilised Light-Gated Recurrent Units (SLi-GRU) layer.
@@ -348,7 +360,6 @@ class SLiGRU_Layer(torch.nn.Module):
         if ff_normalization == "batchnorm":
             self.norm = nn.BatchNorm1d(2 * self.hidden_size, momentum=0.05)
             self.normalize = True
-
         elif ff_normalization == "layernorm":
             self.norm = torch.nn.LayerNorm(2 * self.hidden_size)
             self.normalize = True
@@ -397,7 +408,6 @@ class SLiGRU_Layer(torch.nn.Module):
             w_bn = self.norm(w.reshape(w.shape[0] * w.shape[1], w.shape[2]))
             w = w_bn.reshape(w.shape[0], w.shape[1], w.shape[2])
 
-
         # Sampling dropout mask
         drop_mask = self._sample_drop_mask(w)
 
@@ -414,23 +424,27 @@ class SLiGRU_Layer(torch.nn.Module):
             h_b = h_b.flip(1)
             h = torch.cat([h_f, h_b], dim=2)
 
-        self.hh_max = h.max()
-
         return h
     
     def _sligru_cell_cpu(self, w, ht, drop_mask):
         hiddens = []
 
-        for t in range(w.shape[1]):
-            gates = w[:, t] + self.u(ht)
-            at, zt = gates.chunk(2, 1)
+        uh, uz = self.u.weight.chunk(2, dim=0)
+
+        # Loop over time axis
+        for k in range(w.shape[1]):
+            wh, wz = w[:, k].chunk(2, 1)
+            at = wh + (ht @ uh.T)
+            zt = wz + (ht @ uz.T)
             zt = torch.sigmoid(zt)
             hcand = self.act(at) * drop_mask
-            ht = zt * ht + (1 - zt) * hcand 
+            ht = zt * ht + (1 - zt) * hcand
             hiddens.append(ht)
-        
+
         # Stacking hidden states
         h = torch.stack(hiddens, dim=1)
+
+        # lmdb = self.compute_local_loss(h.max())
         return h
 
     @torch.jit.ignore
@@ -446,37 +460,40 @@ class SLiGRU_Layer(torch.nn.Module):
         drop_mask : torch.Tensor
             Dropout mask.
         """
+    
         if w.is_cuda:
             if not self.training:
                 # [H] -> [B, H] it makes the compiler happy
                 drop_mask = drop_mask.repeat(w.shape[0], 1)
+            
             h = LiGRUCell.apply(w, ht, self.u.weight, drop_mask, self.training)
         else:
             h = self._sligru_cell_cpu(w, ht, drop_mask)
-
+    
         self.compute_local_loss(h.max())
 
         return h
 
-    @torch.compile
     def _compute_lambda(self, norm_uz, norm_uh, max_value):
-
         # compute local loss
-        lmbd = max_value / 4 * norm_uh + norm_uz
-
-        return (lmbd - 1) ** 2
+        lmbd = max_value / 4 * norm_uz  + norm_uh
+        return lmbd
 
     
     def compute_local_loss(self, max_value):
         # get recurrent weights
         uh, uz = self.u.weight.chunk(2, dim=0)
+        # need to cast to fp32 for torch.linalg.matrix_norm
+        uh = uh.to(torch.float32)
+        uz = uz.to(torch.float32)
 
         # compute l2 norm
-        norm_uz = torch.linalg.matrix_norm(uz, ord=2)
         norm_uh = torch.linalg.matrix_norm(uh, ord=2)
+        norm_uz = torch.linalg.matrix_norm(uz, ord=2)
+        
+        self.recurrent_norm_weights = {"uz": norm_uz, "uh":norm_uh}
 
-
-        self.local_loss = self._compute_lambda(
+        self.local_lambda = self._compute_lambda(
             norm_uz, norm_uh, max_value
         )
         
@@ -520,7 +537,7 @@ class SLiGRU_Layer(torch.nn.Module):
                 self.hidden_size, device=w.device
             )
 
-        return drop_mask
+        return drop_mask.to(w.dtype)
 
     def _change_batch_size(self, x):
         """This function changes the batch size when it is different from
