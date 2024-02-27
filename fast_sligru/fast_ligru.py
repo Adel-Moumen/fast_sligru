@@ -381,6 +381,7 @@ class SLiGRU_Layer(torch.nn.Module):
         self._init_drop()
 
         self.act = torch.nn.ReLU()
+        self.local_lambda = None
 
     def forward(self, x, hx: Optional[Tensor] = None):
         # type: (Tensor, Optional[Tensor]) -> Tensor # noqa F821
