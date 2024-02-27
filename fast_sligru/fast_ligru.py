@@ -287,7 +287,7 @@ class LiGRU(torch.nn.Module):
     def get_lambda(self):
         lambdas = []
         for layer in self.rnn:
-            lambdas.append(layer.local_lambda)
+            lambdas.append(layer.compute_local_loss())
         return lambdas
     
     def get_recurrent_norm_weights(self):
@@ -381,7 +381,6 @@ class SLiGRU_Layer(torch.nn.Module):
         self._init_drop()
 
         self.act = torch.nn.ReLU()
-        self.local_lambda = None
 
     def forward(self, x, hx: Optional[Tensor] = None):
         # type: (Tensor, Optional[Tensor]) -> Tensor # noqa F821
@@ -494,7 +493,7 @@ class SLiGRU_Layer(torch.nn.Module):
         
         self.recurrent_norm_weights = {"uz": norm_uz, "uh":norm_uh}
 
-        self.local_lambda = self._compute_lambda(
+        return self._compute_lambda(
             norm_uz, norm_uh, self.h_max
         )
         
