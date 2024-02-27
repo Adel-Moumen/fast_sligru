@@ -202,7 +202,8 @@ class LSTM_Layer(torch.nn.Module):
         else:
             output, (h_n, c_n) = self.lstm(x, ht)
 
-        self.compute_local_loss(c_n.max())
+        self.c_n_max = c_n.max()
+        # self.compute_local_loss(c_n.max())
 
         return output
     
@@ -213,7 +214,7 @@ class LSTM_Layer(torch.nn.Module):
 
         return lmbd
 
-    def compute_local_loss(self, max_value):
+    def compute_local_loss(self):
         # get recurrent weights
         # (W_hi|W_hf|W_hg|W_ho)
         ui, uf, ug, uo = self.lstm.weight_hh_l0.chunk(4, dim=0)
@@ -236,7 +237,7 @@ class LSTM_Layer(torch.nn.Module):
         }
 
         self.local_lambda = self._compute_lambda(
-            norm_ui, norm_uf, norm_ug, norm_uo, max_value
+            norm_ui, norm_uf, norm_ug, norm_uo, self.c_n_max
         )
         
                 
