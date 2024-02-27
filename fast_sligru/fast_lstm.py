@@ -118,7 +118,7 @@ class LSTM(torch.nn.Module):
     def get_lambda(self):
         lambdas = []
         for layer in self.rnn:
-            lambdas.append(layer.local_lambda)
+            lambdas.append(layer.compute_local_loss())
         return lambdas
     
     def get_recurrent_norm_weights(self):
