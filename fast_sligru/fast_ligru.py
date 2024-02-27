@@ -470,7 +470,7 @@ class SLiGRU_Layer(torch.nn.Module):
         else:
             h = self._sligru_cell_cpu(w, ht, drop_mask)
     
-        self.compute_local_loss(h.max())
+        self.h_max = h.max()
 
         return h
 
@@ -480,7 +480,7 @@ class SLiGRU_Layer(torch.nn.Module):
         return lmbd
 
     
-    def compute_local_loss(self, max_value):
+    def compute_local_loss(self):
         # get recurrent weights
         uh, uz = self.u.weight.chunk(2, dim=0)
         # need to cast to fp32 for torch.linalg.matrix_norm
@@ -494,7 +494,7 @@ class SLiGRU_Layer(torch.nn.Module):
         self.recurrent_norm_weights = {"uz": norm_uz, "uh":norm_uh}
 
         self.local_lambda = self._compute_lambda(
-            norm_uz, norm_uh, max_value
+            norm_uz, norm_uh, self.h_max
         )
         
 
