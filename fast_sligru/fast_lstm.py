@@ -236,7 +236,7 @@ class LSTM_Layer(torch.nn.Module):
             "norm_uo": norm_uo,
         }
 
-        self.local_lambda = self._compute_lambda(
+        return self._compute_lambda(
             norm_ui, norm_uf, norm_ug, norm_uo, self.c_n_max
         )
         
