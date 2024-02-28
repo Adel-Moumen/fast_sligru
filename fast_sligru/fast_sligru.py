@@ -507,7 +507,7 @@ class SLiGRU_Layer(torch.nn.Module):
         norm_uh = torch.linalg.matrix_norm(uh, ord=2)
 
 
-        self.local_loss = self._compute_lambda(
+        return self._compute_lambda(
             norm_uz, norm_uh, self.h_max, max_rstd_h, max_rstd_z
         )
         
