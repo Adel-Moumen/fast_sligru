@@ -478,6 +478,7 @@ class SLiGRU_Layer(torch.nn.Module):
             h, save_rstd = SLiGRUCell.apply(w, ht, self.u.weight, drop_mask, self.training)
         else:
             h = self._sligru_cell_cpu(w, ht, drop_mask)
+            save_rstd = None
         
         self.h_max = h.max()
         self.save_rstd = save_rstd
